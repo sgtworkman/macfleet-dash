@@ -31,7 +31,7 @@ from datetime import datetime, timedelta, timezone
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Dict, List, Optional, Tuple
 
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 APP_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PROBE_PATH = os.path.join(APP_ROOT, "probe", "fleet-probe.sh")
 DEFAULT_STATE_PATH = os.path.join(APP_ROOT, "state", "macfleet-state.json")
@@ -113,7 +113,8 @@ def _normalize_config(data: Dict[str, Any]) -> Dict[str, Any]:
         entry = dict(entry)
         entry.setdefault("name", name)
         normalized[name] = entry
-    return {"interval": data.get("interval"), "hosts": normalized}
+    fleet = data.get("fleet") if isinstance(data.get("fleet"), dict) else {}
+    return {"interval": data.get("interval"), "fleet": fleet, "hosts": normalized}
 
 
 def load_config(path: Optional[str] = None) -> Dict[str, Any]:
@@ -277,6 +278,23 @@ def parse_fleet_row(host: str, label: str, raw: str, observed_at: str,
     net_rx_mb = round(net_pair[0] / 1e6, 1) if len(net_pair) == 2 else None
     net_tx_mb = round(net_pair[1] / 1e6, 1) if len(net_pair) == 2 else None
 
+    # Optional root-owned power sampler (power.json written by an approved
+    # LaunchDaemon). Absent file = no power data, never a zero.
+    power = None
+    power_raw = fields.get("POWER_JSON") or ""
+    if power_raw.startswith("{"):
+        try:
+            pdata = json.loads(power_raw)
+            if isinstance(pdata, dict) and pdata.get("schema") == 1:
+                power = {
+                    "cpuW": round(pdata["cpuPowerMw"] / 1000, 1) if pdata.get("cpuPowerMw") is not None else None,
+                    "gpuW": round(pdata["gpuPowerMw"] / 1000, 1) if pdata.get("gpuPowerMw") is not None else None,
+                    "dieTempC": pdata.get("dieTempC"),
+                    "observedAt": pdata.get("generatedAt"),
+                }
+        except ValueError:
+            power = None
+
     return {
         "host": host,
         "name": label,
@@ -295,6 +313,7 @@ def parse_fleet_row(host: str, label: str, raw: str, observed_at: str,
         "gpuUtilPct": gpu_util,
         "netRxMb": net_rx_mb,
         "netTxMb": net_tx_mb,
+        "power": power,
         "diskTotalGb": round(disk_kb[0] / (1024 ** 2), 1) if len(disk_kb) == 3 else None,
         "diskUsedGb": round(disk_kb[1] / (1024 ** 2), 1) if len(disk_kb) == 3 else None,
         "diskFreeGb": round(disk_kb[2] / (1024 ** 2), 1) if len(disk_kb) == 3 else None,
@@ -419,6 +438,115 @@ def _host_entries(config: Dict[str, Any]) -> List[Tuple[str, Dict[str, Any]]]:
     return list(config.get("hosts", {}).items())
 
 
+_TS_CACHE = {"at": 0.0, "data": None}
+
+
+def _tailscale_presence_cached(max_age_s: int = 300, timeout_s: int = 8, debug: bool = False,
+                               via: Optional[str] = None) -> dict:
+    """Non-blocking presence: returns the last good result immediately and
+    refreshes it in a background thread. The CLI can hang for a long time
+    when the collector runs under launchd, so collect() must never wait on it.
+    via: optional ssh host to read `tailscale status` from instead (see
+    _tailscale_presence_via_ssh).
+    """
+    import threading
+    import time as _time
+    now = _time.time()
+    if _TS_CACHE["data"] is None or now - _TS_CACHE["at"] > max_age_s:
+        def refresh():
+            try:
+                if via:
+                    result = _tailscale_presence_via_ssh(via, debug=debug, timeout_s=timeout_s)
+                else:
+                    result = _tailscale_presence(debug=debug, timeout_s=timeout_s)
+                if result:
+                    _TS_CACHE["data"] = result
+                    _TS_CACHE["at"] = _time.time()
+            except Exception:  # noqa: BLE001 - presence is best-effort
+                pass
+        threading.Thread(target=refresh, daemon=True).start()
+    return _TS_CACHE["data"] or {}
+
+
+def _parse_presence_lines(stdout: str) -> dict:
+    """Parse `tailscale status` text into {interface IP: {online, lastSeen}}."""
+    presence = {}
+    for line in (stdout or "").splitlines():
+        parts = line.split(None, 2)
+        if len(parts) < 2 or not re.match(r"\d+\.\d+\.\d+\.\d+$", parts[0]):
+            continue
+        rest = parts[2] if len(parts) > 2 else ""
+        if "offline" in rest:
+            presence[parts[0]] = {
+                "online": False,
+                "lastSeen": rest.split("offline,", 1)[-1].strip() or "offline",
+            }
+        else:
+            presence[parts[0]] = {"online": True, "lastSeen": None}
+    return presence
+
+
+def _tailscale_presence_via_ssh(host: str, debug: bool = False, timeout_s: int = 15) -> dict:
+    """Read `tailscale status` from another fleet Mac over SSH and return the
+    same presence map. Works under launchd, where the local Tailscale CLI's
+    XPC IPC hangs; ssh exec on the remote host is a normal session there."""
+    ssh_bin = shutil.which("ssh") or "/usr/bin/ssh"
+    # Non-interactive shells often lack the Tailscale GUI app in PATH — fall
+    # back to the standard macOS app-binary location.
+    remote_cmd = 'command -v tailscale >/dev/null 2>&1 && tailscale status || /Applications/Tailscale.app/Contents/MacOS/Tailscale status'
+    try:
+        completed = subprocess.run(
+            [ssh_bin] + SSH_OPTIONS + [host, remote_cmd],
+            capture_output=True, text=True, timeout=timeout_s, stdin=subprocess.DEVNULL,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        if debug:
+            print("macfleet: presence-via-ssh %s -> %s" % (host, exc), file=sys.stderr, flush=True)
+        return {}
+    if completed.returncode != 0:
+        if debug:
+            print("macfleet: presence-via-ssh %s rc=%s %s" % (host, completed.returncode, (completed.stderr or "")[:120]), file=sys.stderr, flush=True)
+        return {}
+    return _parse_presence_lines(completed.stdout)
+
+
+def _tailscale_presence(debug: bool = False, timeout_s: int = 15) -> dict:
+    """Map tailscale interface IP -> {online, lastSeen} from the local CLI.
+
+    Returns {} when the CLI is unavailable; never probes the network.
+    """
+    for binary in ("/Applications/Tailscale.app/Contents/MacOS/Tailscale", "tailscale"):
+        try:
+            completed = subprocess.run([binary, "status"], capture_output=True, text=True,
+                                       timeout=timeout_s, stdin=subprocess.DEVNULL)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            if debug:
+                print("macfleet: presence %s -> %s" % (binary, exc), file=sys.stderr, flush=True)
+            continue
+        if completed.returncode != 0:
+            if debug:
+                print("macfleet: presence %s rc=%s %s" % (binary, completed.returncode, (completed.stderr or "")[:120]), file=sys.stderr, flush=True)
+            continue
+        return _parse_presence_lines(completed.stdout)
+    return {}
+
+
+def _fetch_serving(model_url: str) -> Optional[Dict[str, Any]]:
+    """Fetch an OpenAI-compatible /v1/models endpoint and return the model id.
+
+    Lets an http-probed host also show what it is serving. Any failure -> None.
+    """
+    try:
+        from urllib.request import Request, urlopen
+        req = Request(model_url, headers={"User-Agent": "macfleet-dash/%s" % VERSION})
+        with urlopen(req, timeout=HTTP_TIMEOUT_S) as resp:
+            data = json.loads(resp.read().decode("utf-8", "replace"))
+        model_id = (data.get("data") or [{}])[0].get("id")
+        return {"model": model_id} if model_id else None
+    except Exception:  # noqa: BLE001 - serving state is best-effort
+        return None
+
+
 def collect(config: Dict[str, Any], state: Dict[str, Any]) -> Dict[str, Any]:
     """Probe every configured host concurrently; a failed host reports
     unavailable and never blocks the rest of the fleet."""
@@ -437,6 +565,8 @@ def collect(config: Dict[str, Any], state: Dict[str, Any]) -> Dict[str, Any]:
         try:
             raw = probe_host(entry.get("host") or name, method, entry.get("url"))
             row = parse_fleet_row(name, label, raw, observed_at, role=role, note=note)
+            if entry.get("model_url"):
+                row["serving"] = _fetch_serving(entry["model_url"])
         except Exception as exc:  # unreachable host, timeout, probe failure
             with lock:
                 failures.append(str(name))
@@ -452,6 +582,16 @@ def collect(config: Dict[str, Any], state: Dict[str, Any]) -> Dict[str, Any]:
 
     compute_rates(rows, state.get("previous"))
     available = sum(1 for row in rows if row.get("status") == "available")
+
+    if (config.get("fleet") or {}).get("tailnet_presence", True):
+        fleet_cfg = config.get("fleet") or {}
+        presence = _tailscale_presence_cached(debug=bool(os.environ.get("MACFLEET_DEBUG")),
+                                              via=fleet_cfg.get("tailnet_via"))
+        if os.environ.get("MACFLEET_DEBUG"):
+            print("macfleet: presence entries=%d" % len(presence), file=sys.stderr, flush=True)
+        for row in rows:
+            ts_ip = (config["hosts"][row["host"]] or {}).get("ts_ip") if row["host"] in config.get("hosts", {}) else None
+            row["tailnet"] = presence.get(ts_ip) if ts_ip else None
 
     payload: Dict[str, Any] = {
         "schema": 1,
@@ -664,6 +804,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
                         help="print the payload as JSON (fresh with --live, else last state)")
     parser.add_argument("--serve", type=int, metavar="PORT",
                         help="serve the viewer on 127.0.0.1:PORT (writes viewer/data.json first)")
+    parser.add_argument("--interval", type=int, default=300, metavar="SECONDS",
+                        help="with --serve --live: re-probe every SECONDS (default 300)")
     parser.add_argument("--bind", default="127.0.0.1",
                         help="bind address for --serve (default 127.0.0.1)")
     parser.add_argument("--selftest", action="store_true",
@@ -671,13 +813,30 @@ def build_arg_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def serve_viewer(port: int, bind: str, payload: Dict[str, Any]) -> int:
+def serve_viewer(port: int, bind: str, payload: Dict[str, Any],
+                 refresher: Optional[callable] = None,
+                 interval: int = 300) -> int:
     write_viewer_data(payload)
+    if refresher is not None:
+        def refresh_loop():
+            import time
+            first = True
+            while True:
+                # first refresh lands quickly so presence (read asynchronously)
+                # is attached without waiting a full interval after startup
+                time.sleep(15 if first else max(30, interval))
+                first = False
+                try:
+                    write_viewer_data(refresher())
+                except Exception:  # noqa: BLE001 - keep serving the last good data
+                    continue
+        threading.Thread(target=refresh_loop, daemon=True).start()
     handler = lambda *args, **kwargs: SimpleHTTPRequestHandler(
         *args, directory=VIEWER_DIR, **kwargs)
     server = ThreadingHTTPServer((bind, port), handler)
     url = "http://%s:%d/" % (bind, port)
-    print("macfleet-dash viewer serving %s — press Ctrl-C to stop" % url)
+    print("macfleet-dash viewer serving %s%s — press Ctrl-C to stop" % (
+        url, " (live re-probe every %ss)" % max(30, interval) if refresher else ""))
     try:
         server.serve_forever()
     except KeyboardInterrupt:
@@ -715,7 +874,13 @@ def main(argv: Optional[List[str]] = None) -> int:
                 return 0
 
     if args.serve is not None:
-        return serve_viewer(args.serve, args.bind, payload)
+        refresher = None
+        if args.live:
+            def refresher(config=config, state=state):
+                fresh = collect(config, state)
+                write_state(_state_path(args), state)
+                return fresh
+        return serve_viewer(args.serve, args.bind, payload, refresher, args.interval)
     if args.json:
         print(json.dumps(payload, indent=2))
     return 0

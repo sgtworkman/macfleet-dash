@@ -30,5 +30,6 @@ else
   echo "MEM_AVAIL=$(awk '/^MemAvailable:/{print $2*1024}' /proc/meminfo 2>/dev/null)"
   echo "SWAP=$(awk '/^SwapTotal:/{t=$2} /^SwapFree:/{f=$2} END{print t*1024, f*1024}' /proc/meminfo 2>/dev/null)"
   echo "NET_B=$(grep -v '^ *lo:' /proc/net/dev 2>/dev/null | awk '{rx+=$2; tx+=$10} END {print rx+0, tx+0}')"
+  echo "POWER_JSON=$(cat /usr/local/var/wcc-metrics/power.json 2>/dev/null)"
 fi
 echo "DISK_K=$(df -k / 2>/dev/null | awk 'END{print $2, $3, $4}')"

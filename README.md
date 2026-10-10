@@ -51,6 +51,10 @@ role = "Services · sparkDash host"
 [hosts.localhost]
 method = "local"              # probe this machine directly
 
+[fleet]
+tailnet_presence = true
+tailnet_via = "mini1"   # optional: read the peer map from this ssh host (works under launchd)
+
 [hosts.macstudio]
 method = "http"               # restricted SSH? poll its metrics endpoint
 url = "http://100.64.0.5:8791/metrics.txt"   # endpoint Mac's Tailscale IP

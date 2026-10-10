@@ -37,6 +37,7 @@ MACOS_FIXTURE = "\n".join([
     'VMSTAT=Pages free: 450000;Pages speculative: 50000;',
     'SWAP=total = 3072.00M used = 1024.00M free = 2048.00M (encrypted)',
     'NET_B=1234567890 223456789',
+    'POWER_JSON={"schema": 1, "generatedAt": "2026-10-10T00:00:00Z", "cpuPowerMw": 814, "gpuPowerMw": 2300, "dieTempC": 42.1}',
     'DISK_K=994662936 12345678 982317258',
 ]) + "\n"
 
@@ -73,6 +74,7 @@ class TestMacOsRow(unittest.TestCase):
 
     def test_available_and_identity(self):
         self.assertEqual(self.row["status"], "available")
+        self.assertEqual(self.row["power"], {"cpuW": 0.8, "gpuW": 2.3, "dieTempC": 42.1, "observedAt": "2026-10-10T00:00:00Z"})
         self.assertEqual(self.row["chip"], "Apple M4 Pro")
         self.assertEqual(self.row["os"], "macOS 15.2")
         self.assertEqual(self.row["arch"], "arm64")

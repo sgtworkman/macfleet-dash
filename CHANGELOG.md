@@ -1,5 +1,14 @@
 # macfleet-dash change log
 
+## [0.2.0] - 2026-10-10
+
+- sparkDash-style viewer: amber/dark palette with light theme toggle, utilization bars, status chips, fleet summary header, click-to-expand per-host detail, and 24h sparklines
+- Live serve mode: `--serve PORT --live --interval S` re-probes the fleet in a background thread and rewrites data.json; the viewer refetches every 60s
+- Serving state: an http host with `model_url` in its config shows the OpenAI-compatible model id it is serving
+- Tailnet presence: the collector reads local `tailscale status` and maps hosts by `ts_ip`; hosts show online/offline with last-seen
+- Power and die temperature parsed from an optional root-owned sampler JSON (power.json), same as WCC
+- Probe re-synced with the battle-tested WCC probe (adds POWER_JSON)
+
 ## [0.1.0] - 2026-10-10
 
 - Initial release: POSIX probe (macOS + Linux), stdlib collector with
