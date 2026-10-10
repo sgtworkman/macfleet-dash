@@ -29,20 +29,43 @@
     --shadow-hover:0 6px 20px #141e321a, 0 0 0 1px var(--border-strong);
   }
   * { box-sizing: border-box; }
-  body { margin:0; padding:20px 18px 48px; background:var(--bg); color:var(--text);
+  body { margin:0; background:var(--bg); color:var(--text);
     font:14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-  header { display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-bottom:18px; }
-  header h1 { font-size:20px; margin:0; display:flex; align-items:center; gap:8px; color:var(--text-strong); }
-  .head-stats { display:flex; gap:18px; flex-wrap:wrap; margin-left:auto; align-items:center; }
-  .head-stat { text-align:right; }
-  .head-stat b { display:block; font-size:15px; color:var(--text-strong); font-variant-numeric:tabular-nums; }
-  .head-stat span { font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
-  .theme-btn { background:var(--surface); color:var(--muted); border:1px solid var(--border);
-    border-radius:8px; padding:6px 10px; cursor:pointer; font-size:12px; }
+  .shell { display:flex; min-height:100vh; }
+
+  /* ---- left rail (sparkDash-style) ---- */
+  .rail { width:232px; flex:none; background:var(--surface); border-right:1px solid var(--border);
+    display:flex; flex-direction:column; position:sticky; top:0; height:100vh; padding:18px 14px; }
+  .brand { display:flex; align-items:center; gap:9px; padding:2px 6px 14px; }
+  .brand-name { font-size:15.5px; font-weight:600; color:var(--text-strong); letter-spacing:.01em; }
+  .brand-sub { font-size:10px; color:var(--faint); display:block; margin-top:1px; }
+  .rail-label { font-size:10px; text-transform:uppercase; letter-spacing:.08em; color:var(--faint); padding:12px 8px 6px; }
+  .rail nav { display:flex; flex-direction:column; gap:2px; overflow-y:auto; flex:1; min-height:0; }
+  .rail a { display:flex; align-items:center; gap:9px; padding:7px 10px; border-radius:8px;
+    color:var(--muted); text-decoration:none; font-size:13px; cursor:pointer; border:1px solid transparent; }
+  .rail a:hover { background:var(--hover); color:var(--text); }
+  .rail a.active { background:var(--accent-soft); color:var(--accent); border-color:transparent; font-weight:500; }
+  .rail a .dot { width:7px; height:7px; border-radius:99px; flex:none; background:var(--faint); }
+  .rail a .dot.good { background:var(--good); } .rail a .dot.bad { background:var(--bad); }
+  .rail a .nm { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .rail-foot { padding-top:12px; border-top:1px solid var(--border); display:flex; flex-direction:column; gap:8px; }
+  .rail-foot .note { font-size:10.5px; color:var(--faint); line-height:1.5; padding:0 4px; }
+  .theme-btn { background:var(--elevated); color:var(--muted); border:1px solid var(--border);
+    border-radius:8px; padding:7px 10px; cursor:pointer; font-size:12px; text-align:left; }
   .theme-btn:hover { color:var(--text); border-color:var(--border-strong); }
+
+  /* ---- content column ---- */
+  .content { flex:1; min-width:0; padding:18px 20px 40px; }
+  .topstrip { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:14px; }
+  .topstrip h1 { font-size:18px; margin:0; color:var(--text-strong); }
+  .updated { font-size:11px; color:var(--muted); margin-left:auto; }
+  .statrow { display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:12px; margin-bottom:16px; }
+  .stat { background:var(--surface); border-radius:10px; box-shadow:var(--shadow); padding:12px 14px; }
+  .stat b { display:block; font-size:17px; color:var(--text-strong); font-variant-numeric:tabular-nums; }
+  .stat span { font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
   .grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(330px, 1fr)); gap:14px; }
   .card { background:var(--surface); border-radius:12px; box-shadow:var(--shadow);
-    padding:16px 16px 14px; cursor:pointer; transition:box-shadow .15s; }
+    padding:16px 16px 14px; cursor:pointer; transition:box-shadow .15s; scroll-margin:16px; }
   .card:hover { box-shadow:var(--shadow-hover); }
   .card.open { background:var(--elevated); box-shadow:var(--shadow-hover); }
   .card-head { display:flex; align-items:baseline; gap:8px; margin-bottom:4px; flex-wrap:wrap; }
@@ -67,24 +90,45 @@
     display:grid; grid-template-columns:1fr 1fr; gap:8px 14px; }
   .err { margin-top:8px; font-size:11.5px; color:var(--bad); }
   footer { margin-top:22px; font-size:11px; color:var(--faint); }
-  .updated { font-size:11px; color:var(--muted); text-transform:none !important; letter-spacing:0 !important; }
+  @media (max-width: 940px) {
+    .shell { flex-direction:column; }
+    .rail { position:static; width:100%; height:auto; flex-direction:row; align-items:center; gap:10px; padding:10px 12px; }
+    .rail nav { flex-direction:row; flex-wrap:wrap; }
+    .rail-label, .rail-foot .note { display:none; }
+    .rail-foot { border-top:none; padding:0; margin-left:auto; }
+  }
   @media (max-width: 480px) { .grid { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
-<header>
-  <h1><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f0b03a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="11" rx="1.5"/><path d="M2 19h20"/></svg>macfleet-dash</h1>
-  <div class="head-stats">
-    <div class="head-stat"><b id="s-online">—</b><span>online</span></div>
-    <div class="head-stat"><b id="s-mem">—</b><span>memory in use</span></div>
-    <div class="head-stat"><b id="s-cpu">—</b><span>busiest cpu</span></div>
-    <div class="head-stat"><b id="s-disk">—</b><span>disk free</span></div>
-    <div class="head-stat updated" id="s-updated">…</div>
-    <button class="theme-btn" id="themeBtn" title="Toggle theme">◐ theme</button>
-  </div>
-</header>
-<div class="grid" id="grid"></div>
-<footer>Read-only probes (ssh/local/http · no sudo · no secrets) · power/thermal only where the owner approved the sampler · tailnet presence read locally · <span id="ver"></span></footer>
+<div class="shell">
+  <aside class="rail">
+    <div class="brand">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#f0b03a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="11" rx="1.5"/><path d="M2 19h20"/></svg>
+      <div><span class="brand-name">macfleet-dash</span><span class="brand-sub" id="ver"></span></div>
+    </div>
+    <div class="rail-label">Fleet</div>
+    <nav id="railnav"></nav>
+    <div class="rail-foot">
+      <button class="theme-btn" id="themeBtn" title="Toggle theme">◐ Theme</button>
+      <div class="note">Read-only probes · no sudo · no secrets · power/thermal only where the owner approved the sampler</div>
+    </div>
+  </aside>
+  <main class="content">
+    <div class="topstrip">
+      <h1>Fleet overview</h1>
+      <span class="updated" id="s-updated">…</span>
+    </div>
+    <div class="statrow">
+      <div class="stat"><b id="s-online">—</b><span>online</span></div>
+      <div class="stat"><b id="s-mem">—</b><span>memory in use</span></div>
+      <div class="stat"><b id="s-cpu">—</b><span>busiest cpu</span></div>
+      <div class="stat"><b id="s-disk">—</b><span>disk free</span></div>
+    </div>
+    <div class="grid" id="grid"></div>
+    <footer>Aggregate counters only — no process lists, credentials, or secrets. Tailnet presence is the fleet's own view: online now, or offline with last seen.</footer>
+  </main>
+</div>
 
 <script>
 "use strict";
@@ -169,7 +213,7 @@ function hostCard(row, historyHosts) {
     }
     if (row.refreshFailure) body += '<div class="err">' + row.refreshFailure + "</div>";
   }
-  return '<div class="card ' + (open ? "open" : "") + '" data-host="' + row.host + '">' +
+  return '<div class="card ' + (open ? "open" : "") + '" id="host-' + row.host + '" data-host="' + row.host + '">' +
     '<div class="card-head"><h2>' + (row.name || row.host) + "</h2>" +
     '<span class="chip ' + (ok ? "good" : "bad") + '">' + (ok ? "Online" : "No answer") + "</span>" +
     serving + tail + '</div><div class="role">' + (row.role || row.note || "") + "</div>" + body + "</div>";
@@ -187,10 +231,32 @@ function render() {
   $("s-cpu").textContent = busiest ? busiest.name + " " + Math.round(busiest.cpuUsedPct) + "%" : "—";
   $("s-disk").textContent = online.reduce((s, r) => s + (r.diskFreeGb ?? 0), 0).toFixed(0) + " GB";
   $("s-updated").textContent = DATA.observedAt ? "polled " + new Date(DATA.observedAt).toLocaleTimeString() : "";
-  $("ver").textContent = "macfleet-dash v" + (DATA.version || "?");
+  $("ver").textContent = "v" + (DATA.version || "?");
   $("grid").innerHTML = hosts.map(r => hostCard(r, history)).join("");
   document.querySelectorAll(".card").forEach(el =>
     el.addEventListener("click", () => { OPEN = OPEN === el.dataset.host ? null : el.dataset.host; render(); }));
+  // sidebar nav: fleet item + one per host, status dot mirrors the probe result
+  $("railnav").innerHTML =
+    '<a data-nav="all" class="' + (OPEN == null ? "active" : "") + '"><span class="dot ' +
+    (DATA.onlineCount === DATA.totalCount ? "good" : "bad") + '"></span><span class="nm">Fleet overview</span></a>' +
+    hosts.map(r => {
+      const ok = r.status === "available";
+      return '<a data-nav="' + r.host + '" class="' + (OPEN === r.host ? "active" : "") + '">' +
+        '<span class="dot ' + (ok ? "good" : "bad") + '"></span><span class="nm" title="' + (r.name || r.host) + '">' +
+        (r.name || r.host) + "</span></a>";
+    }).join("");
+  document.querySelectorAll("#railnav a").forEach(el => el.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    const host = el.dataset.nav;
+    OPEN = host === "all" ? null : host;
+    render();
+    if (host !== "all") {
+      const card = document.getElementById("host-" + host);
+      if (card) card.scrollIntoView({ behavior: "smooth", block: "center" });
+    } else {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }));
 }
 
 async function load() {
