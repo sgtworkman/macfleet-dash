@@ -1,0 +1,34 @@
+#!/bin/sh
+
+echo "PROBE_OK=1"
+echo "HOSTNAME=$(hostname 2>/dev/null)"
+if command -v sw_vers >/dev/null 2>&1; then
+  echo "OS_NAME=macOS $(sw_vers -productVersion 2>/dev/null)"
+  echo "ARCH=$(uname -m 2>/dev/null)"
+  echo "CHIP=$(sysctl -n machdep.cpu.brand_string 2>/dev/null)"
+  echo "MEM_BYTES=$(sysctl -n hw.memsize 2>/dev/null)"
+  echo "LOADAVG=$(sysctl -n vm.loadavg 2>/dev/null)"
+  echo "BOOT_EPOCH=$(sysctl -n kern.boottime 2>/dev/null | awk '{print $4}')"
+  echo "UPTIME_SECS="
+  echo "CPU_LINE=$(top -l 2 -n 0 2>/dev/null | grep 'CPU usage' | tail -1)"
+  echo "GPU_UTIL=$(ioreg -r -d 1 -w 0 -c IOAccelerator 2>/dev/null | grep -m1 'Device Utilization')"
+  echo "VMSTAT=$(vm_stat 2>/dev/null | grep -E 'Pages free|Pages speculative' | tr '\n' ';')"
+  echo "SWAP=$(sysctl -n vm.swapusage 2>/dev/null)"
+  echo "NET_B=$(netstat -ib 2>/dev/null | awk '$3 ~ /^<Link/ {rx+=$7; tx+=$10} END {print rx+0, tx+0}')"
+else
+  echo "OS_NAME=Linux $(uname -r 2>/dev/null)"
+  echo "ARCH=$(uname -m 2>/dev/null)"
+  echo "CHIP=$(grep -m1 'model name' /proc/cpuinfo 2>/dev/null | cut -d: -f2 | sed 's/^ *//')"
+  echo "MEM_BYTES=$(awk '/^MemTotal:/{print $2*1024}' /proc/meminfo 2>/dev/null)"
+  echo "LOADAVG=$(cat /proc/loadavg 2>/dev/null)"
+  echo "BOOT_EPOCH="
+  echo "UPTIME_SECS=$(awk '{print int($1)}' /proc/uptime 2>/dev/null)"
+  echo "CPU_A=$(awk '/^cpu /{print $2+$3+$4, $5}' /proc/stat 2>/dev/null)"
+  sleep 1
+  echo "CPU_B=$(awk '/^cpu /{print $2+$3+$4, $5}' /proc/stat 2>/dev/null)"
+  echo "GPU_UTIL=$(cat /sys/class/drm/card*/device/gpu_busy_percent 2>/dev/null | head -1)"
+  echo "MEM_AVAIL=$(awk '/^MemAvailable:/{print $2*1024}' /proc/meminfo 2>/dev/null)"
+  echo "SWAP=$(awk '/^SwapTotal:/{t=$2} /^SwapFree:/{f=$2} END{print t*1024, f*1024}' /proc/meminfo 2>/dev/null)"
+  echo "NET_B=$(grep -v '^ *lo:' /proc/net/dev 2>/dev/null | awk '{rx+=$2; tx+=$10} END {print rx+0, tx+0}')"
+fi
+echo "DISK_K=$(df -k / 2>/dev/null | awk 'END{print $2, $3, $4}')"

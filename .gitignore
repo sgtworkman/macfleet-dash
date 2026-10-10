@@ -1,0 +1,8 @@
+# runtime state — collector-owned, not source
+state/
+viewer/data.json
+__pycache__/
+*.pyc
+.DS_Store
+macfleet.toml
+macfleet.json

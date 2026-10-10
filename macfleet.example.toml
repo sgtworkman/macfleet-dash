@@ -1,0 +1,28 @@
+# Example macfleet.toml — copy to macfleet-dash root (next to collector/) and edit.
+# method: "ssh" (BatchMode, no sudo) | "local" (this machine) | "http" (metrics endpoint)
+
+interval = 300
+
+[hosts.mini1]
+method = "ssh"
+host = "you@mini1"
+role = "Services · sparkDash host"
+
+[hosts.mini2]
+method = "ssh"
+host = "you@mini2"
+role = "Services · Blog Factory + automation"
+
+[hosts.localhost]
+method = "local"
+role = "Hermes executive cockpit"
+
+[hosts.macstudio]
+method = "http"
+url = "http://100.64.0.5:8791/metrics.txt"
+role = "Gemma canary (MLX) + side qualifications"
+
+[hosts.mbp2013]
+method = "ssh"
+host = "mbp2013"
+role = "Amazon lane (Omarchy)"

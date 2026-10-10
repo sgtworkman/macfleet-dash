@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>macfleet-dash</title>
+<style>
+  :root {
+    --bg: #f5f5f7; --card: #ffffff; --ink: #1d1d1f; --muted: #6e6e73;
+    --line: #e5e5ea; --good: #1d8a4a; --bad: #c0392b; --warn: #b7791f;
+    --accent: #0b66c3; --spark: #0b66c3; --spark2: #8e44ad;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161618; --card: #232326; --ink: #f2f2f5; --muted: #a1a1a8;
+      --line: #3a3a3f; --good: #4cc38a; --bad: #ff6b5e; --warn: #e2b93b;
+      --accent: #6db3f2; --spark: #6db3f2; --spark2: #c39bf2;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px 16px 48px; background: var(--bg); color: var(--ink);
+    font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; }
+  header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; margin-bottom: 6px; }
+  h1 { font-size: 22px; margin: 0; letter-spacing: -0.2px; }
+  h1 small { font-size: 12px; color: var(--muted); font-weight: 400; margin-left: 6px; }
+  .sub { color: var(--muted); font-size: 13px; margin: 0 0 18px; }
+  .pill {
+    display: inline-block; padding: 2px 10px; border-radius: 999px;
+    font-size: 12px; font-weight: 600; border: 1px solid transparent;
+  }
+  .pill.good { color: var(--good); border-color: var(--good); background: color-mix(in srgb, var(--good) 12%, transparent); }
+  .pill.bad  { color: var(--bad);  border-color: var(--bad);  background: color-mix(in srgb, var(--bad) 12%, transparent); }
+  .summary {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 10px; margin-bottom: 20px;
+  }
+  .summary .cell {
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px;
+  }
+  .cell dt { font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--muted); margin: 0 0 2px; }
+  .cell dd { margin: 0; font-size: 17px; font-weight: 600; }
+  .cell dd small { display: block; font-size: 11px; font-weight: 400; color: var(--muted); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
+  .host {
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px;
+  }
+  .host h2 { margin: 0; font-size: 16px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .host .role { color: var(--muted); font-size: 12px; margin: 2px 0 10px; }
+  .host .hw { color: var(--muted); font-size: 12px; margin-bottom: 10px; }
+  .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; font-size: 13px; }
+  .stats div { display: flex; justify-content: space-between; gap: 8px; }
+  .stats span.k { color: var(--muted); }
+  .stats span.v { font-variant-numeric: tabular-nums; }
+  .bar { height: 5px; background: var(--line); border-radius: 3px; margin: 4px 0 2px; overflow: hidden; }
+  .bar > i { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
+  .spark { margin-top: 12px; }
+  .spark .cap { font-size: 11px; color: var(--muted); margin-bottom: 2px; display: flex; justify-content: space-between; }
+  svg.sparkline { width: 100%; height: 34px; display: block; }
+  .err { color: var(--bad); font-size: 12px; margin-top: 8px; }
+  .empty { color: var(--muted); font-size: 14px; background: var(--card); border: 1px dashed var(--line);
+           border-radius: 12px; padding: 28px; text-align: center; }
+  code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--line);
+         padding: 1px 5px; border-radius: 4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>macfleet-dash <small id="ver"></small></h1>
+    <span id="fleetPill" class="pill bad">loading</span>
+  </header>
+  <p class="sub" id="observed">Read-only fleet health · no sudo · no telemetry</p>
+
+  <dl class="summary" id="summary"></dl>
+  <div class="grid" id="hosts"></div>
+  <div class="empty" id="empty" hidden>
+    No fleet data yet. Run <code>python3 collector/macfleet.py --live</code>, then reload this page.
+  </div>
+</div>
+
+<script>
+"use strict";
+const PCT = (v) => v == null ? "—" : Math.round(v) + "%";
+const NUM = (v, suffix) => v == null ? "—" : v + (suffix || "");
+const sparkColor = getComputedStyle(document.documentElement).getPropertyValue("--spark").trim() || "#0b66c3";
+const spark2Color = getComputedStyle(document.documentElement).getPropertyValue("--spark2").trim() || "#8e44ad";
+
+// Inline SVG polyline from a history series [ts, cpu, gpu, mem, rxMbps, txMbps, load1m]
+// idx 1=cpu, 2=gpu, 3=mem, 4/5=net rates. Returns '' when the series has no values.
+function sparkline(series, idx, max, color, idx2, max2, color2) {
+  const pts = (series || []).filter((p) => p && (p[idx] != null || (idx2 != null && p[idx2] != null)));
+  if (pts.length < 2) return "";
+  const W = 300, H = 34, n = pts.length;
+  const x = (i) => (i / (n - 1)) * W;
+  const y = (v, cap) => H - 3 - Math.min(Math.max(v / cap, 0), 1) * (H - 6);
+  const line = (idx_, cap) => {
+    let d = "";
+    pts.forEach((p, i) => { if (p[idx_] != null) d += (d ? " " : "") + x(i).toFixed(1) + "," + y(p[idx_], cap).toFixed(1); });
+    return d;
+  };
+  let svg = '<svg class="sparkline" viewBox="0 0 300 34" preserveAspectRatio="none" aria-hidden="true">';
+  svg += '<line x1="0" y1="' + (H - 3) + '" x2="300" y2="' + (H - 3) + '" stroke="currentColor" stroke-opacity="0.15"/>';
+  if (idx2 != null) {
+    const d2 = line(idx2, max2);
+    if (d2) svg += '<polyline points="' + d2 + '" fill="none" stroke="' + color2 + '" stroke-width="1.2" stroke-opacity="0.7"/>';
+  }
+  const d = line(idx, max);
+  if (d) svg += '<polyline points="' + d + '" fill="none" stroke="' + color + '" stroke-width="1.6"/>';
+  svg += "</svg>";
+  return svg;
+}
+
+function cell(k, v, small) {
+  const div = document.createElement("div");
+  const dt = document.createElement("dt"); dt.textContent = k;
+  const dd = document.createElement("dd"); dd.textContent = v;
+  if (small) { const s = document.createElement("small"); s.textContent = small; dd.appendChild(s); }
+  div.append(dt, dd);
+  return div;
+}
+
+function hostCard(row, history) {
+  const card = document.createElement("section");
+  card.className = "host";
+  const h2 = document.createElement("h2");
+  const name = document.createElement("span"); name.textContent = row.name || row.host;
+  const pill = document.createElement("span");
+  pill.className = "pill " + (row.status === "available" ? "good" : "bad");
+  pill.textContent = row.status === "available" ? "Online" : "No answer";
+  pill.title = row.refreshFailure || "";
+  h2.append(name, pill);
+  card.appendChild(h2);
+
+  const role = document.createElement("p");
+  role.className = "role";
+  role.textContent = [row.role, row.note].filter(Boolean).join(" · ") || " ";
+  card.appendChild(role);
+
+  if (row.status !== "available") {
+    const err = document.createElement("p");
+    err.className = "err";
+    err.textContent = row.refreshFailure || "probe did not answer";
+    card.appendChild(err);
+    return card;
+  }
+
+  const hw = document.createElement("p");
+  hw.className = "hw";
+  hw.textContent = [row.chip, row.arch, row.os].filter(Boolean).join(" · ");
+  card.appendChild(hw);
+
+  const stats = document.createElement("div");
+  stats.className = "stats";
+  const add = (k, v) => {
+    const d = document.createElement("div");
+    const kk = document.createElement("span"); kk.className = "k"; kk.textContent = k;
+    const vv = document.createElement("span"); vv.className = "v"; vv.textContent = v;
+    d.append(kk, vv); stats.appendChild(d);
+  };
+  add("CPU", PCT(row.cpuUsedPct) + (row.load1m != null ? "  (load " + row.load1m + ")" : ""));
+  add("GPU", PCT(row.gpuUtilPct));
+  add("Memory", NUM(row.memUsedGb, "") + " / " + NUM(row.ramGb, " GB"));
+  add("Swap", row.swapUsedGb != null ? NUM(row.swapUsedGb, " GB") : "—");
+  add("Disk free", row.diskFreeGb != null ? NUM(row.diskFreeGb, " GB") : "—");
+  add("Uptime", row.uptimeDays != null ? NUM(row.uptimeDays, " d") : "—");
+  const net = (row.netRxMbps != null && row.netTxMbps != null)
+    ? "↓ " + row.netRxMbps + " · ↑ " + row.netTxMbps + " MB/s"
+    : (row.netRxMb != null ? NUM(row.netRxMb, " MB since boot") : "—");
+  add("Net", net);
+  card.appendChild(stats);
+
+  if (row.memUsedGb != null && row.ramGb) {
+    const bar = document.createElement("div");
+    bar.className = "bar";
+    const fill = document.createElement("i");
+    fill.style.width = Math.min(Math.max(row.memUsedGb / row.ramGb * 100, 0), 100) + "%";
+    bar.appendChild(fill);
+    card.appendChild(bar);
+  }
+
+  const series = (history && history.hosts && history.hosts[row.host]) || [];
+  if (series.length >= 2) {
+    const spark = document.createElement("div");
+    spark.className = "spark";
+    const cap = document.createElement("div");
+    cap.className = "cap";
+    const l = document.createElement("span"); l.textContent = "24h · CPU";
+    const r = document.createElement("span"); r.textContent = "net rx (thin: tx)";
+    cap.append(l, r);
+    spark.appendChild(cap);
+    spark.insertAdjacentHTML("beforeend",
+      sparkline(series, 1, 100, sparkColor, 4, 10, spark2Color) || "");
+    if (spark.querySelector("svg")) card.appendChild(spark);
+  }
+  return card;
+}
+
+async function load() {
+  try {
+    const res = await fetch("data.json", { cache: "no-store" });
+    if (!res.ok) throw new Error("data.json " + res.status);
+    const data = await res.json();
+    render(data);
+  } catch (exc) {
+    document.getElementById("empty").hidden = false;
+    document.getElementById("fleetPill").textContent = "no data";
+    document.getElementById("observed").textContent =
+      "Could not load data.json (" + exc.message + "). Run the collector first.";
+  }
+}
+
+function render(data) {
+  document.getElementById("ver").textContent = "v" + (data.version || "0.1.0");
+  const pill = document.getElementById("fleetPill");
+  const online = data.onlineCount || 0, total = data.totalCount || 0;
+  pill.className = "pill " + (data.status === "available" ? (online === total ? "good" : "bad") : "bad");
+  pill.textContent = total ? online + "/" + total + " online" : (data.status || "unavailable");
+  const obs = document.getElementById("observed");
+  const at = data.observedAt ? new Date(data.observedAt).toLocaleString() : "";
+  obs.textContent = "Observed " + (at || "—") + " · read-only probes · no sudo, no telemetry" +
+    (data.refreshFailure ? " · " + data.refreshFailure : "");
+
+  const hosts = data.hosts || [];
+  const avail = hosts.filter((r) => r.status === "available");
+  const memUsed = avail.reduce((s, r) => s + (r.memUsedGb || 0), 0);
+  const memCap = avail.reduce((s, r) => s + (r.ramGb || 0), 0);
+  const diskFree = avail.reduce((s, r) => s + (r.diskFreeGb || 0), 0);
+  const busiest = avail.slice().sort((a, b) => (b.cpuUsedPct || -1) - (a.cpuUsedPct || -1))[0];
+
+  const summary = document.getElementById("summary");
+  summary.textContent = "";
+  summary.append(
+    cell("Hosts online", total ? online + "/" + total : "—"),
+    cell("Memory in use", memCap ? memUsed.toFixed(1) + " / " + memCap.toFixed(0) + " GB" : "—", "summed across online Macs"),
+    cell("Disk free", diskFree ? diskFree.toFixed(0) + " GB" : "—", "root volumes"),
+    cell("Busiest CPU", busiest && busiest.cpuUsedPct != null ? Math.round(busiest.cpuUsedPct) + "%" : "—",
+         busiest ? (busiest.name || "") : "no samples")
+  );
+
+  const grid = document.getElementById("hosts");
+  grid.textContent = "";
+  hosts.forEach((row) => grid.appendChild(hostCard(row, data.history)));
+  document.getElementById("empty").hidden = hosts.length > 0;
+}
+
+load();
+setInterval(load, 60000); // re-fetch; the collector owns freshness
+</script>
+</body>
+</html>
