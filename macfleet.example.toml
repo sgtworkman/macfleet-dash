@@ -21,6 +21,10 @@ role = "Hermes executive cockpit"
 method = "http"
 url = "http://100.64.0.5:8791/metrics.txt"
 role = "Gemma canary (MLX) + side qualifications"
+# An http host with a model_url shows the OpenAI-compatible model it serves.
+# model_url = "http://100.64.0.5:18890/v1/models"
+# bench = true adds a small generation-rate probe (one ~96-token completion per
+# cycle) and shows end-to-end tok/s on the serving chip. Opt-in per host.
 
 [hosts.mbp2013]
 method = "ssh"

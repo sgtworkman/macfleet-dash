@@ -31,7 +31,7 @@ from datetime import datetime, timedelta, timezone
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Dict, List, Optional, Tuple
 
-VERSION = "0.3.0"
+VERSION = "0.4.0"
 APP_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PROBE_PATH = os.path.join(APP_ROOT, "probe", "fleet-probe.sh")
 DEFAULT_STATE_PATH = os.path.join(APP_ROOT, "state", "macfleet-state.json")
@@ -388,23 +388,31 @@ def _point_ts(point: List[Any]) -> float:
 
 
 def update_history(history: Dict[str, Any], rows: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """Append this cycle's available rows to the rolling 24h history.
+    """Append this cycle's available rows to the rolling 24h + 7d history.
 
     Per host: [observedAt, cpuUsedPct, gpuUtilPct, memUsedGb,
-    netRxMbps, netTxMbps, load1m]. Cap 288 points; missing rates are None."""
+    netRxMbps, netTxMbps, load1m]. "hosts" keeps 288 points (24h at the
+    default 5-minute cycle); "week" keeps the same points for 7 days
+    (capped at 2100 — the viewer decimates when drawing)."""
     hosts = history.get("hosts") if isinstance(history.get("hosts"), dict) else {}
-    cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).timestamp()
+    week = history.get("week") if isinstance(history.get("week"), dict) else {}
+    cutoff_24h = (datetime.now(timezone.utc) - timedelta(hours=24)).timestamp()
+    cutoff_7d = (datetime.now(timezone.utc) - timedelta(days=7)).timestamp()
     for row in rows:
         if row.get("status") != "available":
             continue
-        points = hosts.setdefault(row["host"], [])
-        points.append([
+        point = [
             row.get("observedAt"),
             row.get("cpuUsedPct"), row.get("gpuUtilPct"), row.get("memUsedGb"),
             row.get("netRxMbps"), row.get("netTxMbps"), row.get("load1m"),
-        ])
-        hosts[row["host"]] = [p for p in points if _point_ts(p) >= cutoff][-HISTORY_MAX_POINTS:]
-    return {"schema": 1, "hosts": hosts}
+        ]
+        points = hosts.setdefault(row["host"], [])
+        points.append(point)
+        hosts[row["host"]] = [p for p in points if _point_ts(p) >= cutoff_24h][-HISTORY_MAX_POINTS:]
+        week_points = week.setdefault(row["host"], [])
+        week_points.append(point)
+        week[row["host"]] = [p for p in week_points if _point_ts(p) >= cutoff_7d][-2100:]
+    return {"schema": 1, "hosts": hosts, "week": week}
 
 
 def _state_path(args: argparse.Namespace) -> str:
@@ -547,6 +555,44 @@ def _fetch_serving(model_url: str) -> Optional[Dict[str, Any]]:
         return None
 
 
+def _bench_tokens(model_url: str, timeout_s: int = 45) -> Optional[Dict[str, Any]]:
+    """Measure an end-to-end generation rate from an OpenAI-compatible endpoint.
+
+    Sends one small completion and computes completion_tokens / wall seconds —
+    an honest end-to-end figure (includes prompt processing), not a pure
+    decode benchmark. Opt-in per host via `bench = true`. Any failure -> None.
+    """
+    try:
+        from urllib.request import Request, urlopen
+        ident = _fetch_serving(model_url)
+        model_id = (ident or {}).get("model")
+        if not model_id:
+            return None
+        body = json.dumps({
+            "model": model_id,
+            "messages": [{"role": "user", "content": "Count from 1 to 30, digits only."}],
+            "max_tokens": 96,
+            "temperature": 0,
+        }).encode()
+        req = Request(model_url.replace("/models", "/chat/completions"),
+                      data=body,
+                      headers={"User-Agent": "macfleet-dash/%s" % VERSION, "Content-Type": "application/json"})
+        started = time.time()
+        with urlopen(req, timeout=timeout_s) as resp:
+            data = json.loads(resp.read().decode("utf-8", "replace"))
+        elapsed = time.time() - started
+        completion_tokens = (data.get("usage") or {}).get("completion_tokens")
+        if not completion_tokens or elapsed <= 0:
+            return None
+        return {
+            "tokPerS": round(completion_tokens / elapsed, 1),
+            "completionTokens": completion_tokens,
+            "wallS": round(elapsed, 2),
+        }
+    except Exception:  # noqa: BLE001 - benching is best-effort, never fatal
+        return None
+
+
 def collect(config: Dict[str, Any], state: Dict[str, Any]) -> Dict[str, Any]:
     """Probe every configured host concurrently; a failed host reports
     unavailable and never blocks the rest of the fleet."""
@@ -566,7 +612,14 @@ def collect(config: Dict[str, Any], state: Dict[str, Any]) -> Dict[str, Any]:
             raw = probe_host(entry.get("host") or name, method, entry.get("url"))
             row = parse_fleet_row(name, label, raw, observed_at, role=role, note=note)
             if entry.get("model_url"):
-                row["serving"] = _fetch_serving(entry["model_url"])
+                serving = _fetch_serving(entry["model_url"])
+                if entry.get("bench"):
+                    bench = _bench_tokens(entry["model_url"])
+                    if bench:
+                        serving = dict(serving or {})
+                        serving["tokPerS"] = bench["tokPerS"]
+                        serving["bench"] = bench
+                row["serving"] = serving
         except Exception as exc:  # unreachable host, timeout, probe failure
             with lock:
                 failures.append(str(name))
@@ -778,6 +831,13 @@ def selftest() -> int:
         ("history caps at 288", len(history["hosts"]["macstudio"]) == 1
          and len(update_history(history, [])["hosts"].get("down", [])) == 0,
          list(history["hosts"].keys())),
+        ("week history keeps 7d and prunes old", len(history["week"]["macstudio"]) == 1
+         and history["week"]["macstudio"][0][0] == at
+         and len(update_history({"schema": 1, "hosts": {}, "week": {"macstudio": [["2020-01-01T00:00:00Z"] + [None] * 6]}},
+                                [{"host": "macstudio", "status": "available", "observedAt": at,
+                                  "cpuUsedPct": 9.3, "gpuUtilPct": 7, "memUsedGb": 16.4,
+                                  "netRxMbps": 1.0, "netTxMbps": 0.01, "load1m": 1.71}])["week"]["macstudio"]) == 1,
+         list(history.get("week", {}).keys())),
     ]
 
     failed = [c for c in checks if not c[1]]

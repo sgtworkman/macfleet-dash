@@ -5,7 +5,9 @@ macOS + Linux, zero sudo, zero dependencies.
 
 One small collector polls every Mac you register, one probe script answers on
 each of them, and a single-file viewer shows CPU, GPU, memory, swap, disk,
-network, load and uptime per host — with 24-hour sparklines. Python 3.9+
+network, load and uptime per host — with 24-hour and 7-day sparklines, a ⌘K
+command palette, dark/OLED/light themes, serving-model state (with an opt-in
+tok/s generation probe), and tailnet presence. Python 3.9+
 standard library only: no node_modules, no build step, no third-party runtime
 packages anywhere.
 

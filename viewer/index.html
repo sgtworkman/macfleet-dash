@@ -8,7 +8,7 @@
 <script>
   try {
     var t = localStorage.getItem("macfleet-theme");
-    if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+    if (t === "light" || t === "dark" || t === "oled") document.documentElement.setAttribute("data-theme", t);
   } catch (e) {}
 </script>
 <style>
@@ -27,6 +27,14 @@
     --good:#12915f; --bad:#cf3038; --warn:#c85a10; --info:#2a6fdb; --violet:#7a4fd8;
     --shadow:0 1px 2px #141e320d, 0 0 0 1px var(--border);
     --shadow-hover:0 6px 20px #141e321a, 0 0 0 1px var(--border-strong);
+  }
+  [data-theme="oled"] {
+    --bg:#000; --surface:#0a0a0c; --elevated:#101013; --hover:#17171b;
+    --border:#1e1e23; --border-strong:#33333b; --text:#e8e8ea; --text-strong:#fff;
+    --muted:#84868e; --faint:#55565c; --accent:#f0b03a; --accent-soft:#f0b03a20;
+    --good:#3fd08f; --bad:#ff5d62; --warn:#ff914d; --info:#6ea8ff; --violet:#b690ff;
+    --shadow:0 1px 2px #000, 0 0 0 1px var(--border);
+    --shadow-hover:0 8px 24px #000, 0 0 0 1px var(--border-strong);
   }
   * { box-sizing: border-box; }
   body { margin:0; background:var(--bg); color:var(--text);
@@ -90,6 +98,23 @@
     display:grid; grid-template-columns:1fr 1fr; gap:8px 14px; }
   .err { margin-top:8px; font-size:11.5px; color:var(--bad); }
   footer { margin-top:22px; font-size:11px; color:var(--faint); }
+  .period-toggle { display:inline-flex; border:1px solid var(--border); border-radius:8px; overflow:hidden; }
+  .period-toggle button { background:var(--surface); color:var(--muted); border:none;
+    padding:4px 12px; font-size:11.5px; cursor:pointer; }
+  .period-toggle button.active { background:var(--accent-soft); color:var(--accent); font-weight:500; }
+  .palette-backdrop { position:fixed; inset:0; background:#000a; display:none; align-items:flex-start;
+    justify-content:center; padding-top:14vh; z-index:50; }
+  .palette-backdrop.open { display:flex; }
+  .palette { width:min(560px, 92vw); background:var(--elevated); border:1px solid var(--border-strong);
+    border-radius:12px; box-shadow:var(--shadow-hover); overflow:hidden; }
+  .palette input { width:100%; background:transparent; color:var(--text-strong); border:none; outline:none;
+    padding:14px 16px; font-size:15px; border-bottom:1px solid var(--border); }
+  .palette ul { list-style:none; margin:0; padding:6px; max-height:46vh; overflow-y:auto; }
+  .palette li { padding:9px 12px; border-radius:8px; cursor:pointer; font-size:13.5px; color:var(--text);
+    display:flex; align-items:center; gap:10px; }
+  .palette li.sel { background:var(--accent-soft); color:var(--accent); }
+  .palette li .k { margin-left:auto; font-size:10.5px; color:var(--faint); }
+  .palette .empty { padding:14px; color:var(--faint); font-size:12.5px; }
   @media (max-width: 940px) {
     .shell { flex-direction:column; }
     .rail { position:static; width:100%; height:auto; flex-direction:row; align-items:center; gap:10px; padding:10px 12px; }
@@ -117,6 +142,9 @@
   <main class="content">
     <div class="topstrip">
       <h1>Fleet overview</h1>
+      <div class="period-toggle" id="periodToggle" title="History window for sparklines">
+        <button data-period="day" class="active">24h</button><button data-period="week">7d</button>
+      </div>
       <span class="updated" id="s-updated">…</span>
     </div>
     <div class="statrow">
@@ -129,23 +157,39 @@
     <footer>Aggregate counters only — no process lists, credentials, or secrets. Tailnet presence is the fleet's own view: online now, or offline with last seen.</footer>
   </main>
 </div>
+<div class="palette-backdrop" id="paletteBackdrop">
+  <div class="palette">
+    <input id="paletteInput" placeholder="Type a host or command…  (Esc to close)" autocomplete="off" spellcheck="false">
+    <ul id="paletteList"></ul>
+  </div>
+</div>
 
 <script>
 "use strict";
-let DATA = null, OPEN = null;
+let DATA = null, OPEN = null, PERIOD = "day";
 const $ = (id) => document.getElementById(id);
 const fmt = (v, s = "") => v == null ? "—" : v + s;
 const pct = (v) => v == null ? "—" : Math.round(v) + "%";
 const barCls = (v) => v == null ? "" : v > 90 ? "r" : v > 70 ? "w" : "";
 
+function historySeries(host) {
+  const h = DATA && DATA.history || {};
+  return (PERIOD === "week" ? (h.week || {})[host] : h.hosts[host]) || [];
+}
 function polyline(series, index, W = 200, H = 30) {
-  const pts = (series || []).map(p => Array.isArray(p) ? p[index] : null);
+  let pts = (series || []).map(p => Array.isArray(p) ? p[index] : null);
   const idxs = pts.map((v, i) => [i, v]).filter(([, v]) => typeof v === "number" && isFinite(v));
   if (idxs.length < 2) return null;
+  // decimate long series (7d) — polyline shape is preserved by the stride
+  if (idxs.length > 400) {
+    const stride = Math.ceil(idxs.length / 400);
+    idxs = idxs.filter((_, i) => i % stride === 0 || i === idxs.length - 1);
+  }
   const vals = idxs.map(([, v]) => v);
   const min = Math.min(...vals), max = Math.max(...vals), span = (max - min) || 1;
+  const n = pts.length;
   return idxs.map(([i, v]) => {
-    const x = 2 + (i / (pts.length - 1)) * (W - 4);
+    const x = 2 + (i / (n - 1)) * (W - 4);
     const y = H - 3 - ((v - min) / span) * (H - 6);
     return x.toFixed(1) + "," + y.toFixed(1);
   }).join(" ");
@@ -165,9 +209,12 @@ function metric(lab, val, barVal, cls) {
 function hostCard(row, historyHosts) {
   const open = OPEN === row.host;
   const ok = row.status === "available";
-  const series = (historyHosts && historyHosts[row.host]) || [];
-  const serving = row.serving && row.serving.model
-    ? '<span class="chip accent" title="OpenAI-compatible model serving">⚡ ' + row.serving.model + "</span>" : "";
+  const series = historySeries(row.host);
+  const sv = row.serving || {};
+  const serving = sv.model
+    ? '<span class="chip accent" title="OpenAI-compatible model serving' +
+      (sv.tokPerS ? " — end-to-end " + sv.tokPerS + " tok/s" : "") + '">⚡ ' + sv.model +
+      (sv.tokPerS ? " · " + sv.tokPerS + " tok/s" : "") + "</span>" : "";
   const tail = row.tailnet
     ? (row.tailnet.online ? '<span class="chip good">tailnet</span>'
        : '<span class="chip bad" title="' + (row.tailnet.lastSeen || "") + '">offline' +
@@ -265,11 +312,61 @@ async function load() {
     if (r.ok) { DATA = await r.json(); render(); }
   } catch (e) { /* keep the last good data on screen */ }
 }
-$("themeBtn").addEventListener("click", () => {
-  const next = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
+$("themeBtn").addEventListener("click", cycleTheme);
+function cycleTheme() {
+  const order = ["dark", "oled", "light"];
+  const cur = document.documentElement.getAttribute("data-theme") || "dark";
+  const next = order[(order.indexOf(cur) + 1) % order.length];
   document.documentElement.setAttribute("data-theme", next);
   try { localStorage.setItem("macfleet-theme", next); } catch (e) {}
+}
+document.querySelectorAll("#periodToggle button").forEach(btn => btn.addEventListener("click", () => {
+  PERIOD = btn.dataset.period;
+  document.querySelectorAll("#periodToggle button").forEach(b => b.classList.toggle("active", b === btn));
+  render();
+}));
+
+// ---- command palette (⌘K / Ctrl+K) ----
+const pBackdrop = $("paletteBackdrop"), pInput = $("paletteInput"), pList = $("paletteList");
+let pSel = 0, pItems = [];
+function paletteOpen() {
+  pBackdrop.classList.add("open");
+  pInput.value = "";
+  paletteBuild("");
+  pInput.focus();
+}
+function paletteClose() { pBackdrop.classList.remove("open"); }
+function paletteBuild(q) {
+  const qn = (q || "").toLowerCase();
+  const hosts = (DATA && DATA.hosts) || [];
+  pItems = [
+    { id: "all", label: "Fleet overview", hint: "nav", run: () => { OPEN = null; render(); window.scrollTo({ top: 0, behavior: "smooth" }); } },
+    ...hosts.map(r => ({ id: r.host, label: (r.name || r.host) + (r.status === "available" ? "" : " (no answer)"), hint: "host", run: () => { OPEN = r.host; render(); const c = document.getElementById("host-" + r.host); if (c) c.scrollIntoView({ behavior: "smooth", block: "center" }); } })),
+    { id: "theme", label: "Toggle theme (dark / OLED / light)", hint: "action", run: cycleTheme },
+    { id: "refresh", label: "Refresh now", hint: "action", run: load },
+  ].filter(item => !qn || item.label.toLowerCase().includes(qn));
+  pSel = 0;
+  pList.innerHTML = pItems.length
+    ? pItems.map((item, i) => '<li data-i="' + i + '" class="' + (i === pSel ? "sel" : "") + '">' + item.label + '<span class="k">' + item.hint + "</span></li>").join("")
+    : '<li class="empty">No matches</li>';
+  [...pList.querySelectorAll("li[data-i]")].forEach(li => li.addEventListener("click", () => { paletteClose(); pItems[+li.dataset.i].run(); }));
+}
+function paletteMove(delta) {
+  if (!pItems.length) return;
+  pSel = (pSel + delta + pItems.length) % pItems.length;
+  [...pList.querySelectorAll("li[data-i]")].forEach(li => li.classList.toggle("sel", +li.dataset.i === pSel));
+}
+document.addEventListener("keydown", (ev) => {
+  if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === "k") { ev.preventDefault(); pBackdrop.classList.contains("open") ? paletteClose() : paletteOpen(); return; }
+  if (!pBackdrop.classList.contains("open")) return;
+  if (ev.key === "Escape") { paletteClose(); }
+  else if (ev.key === "ArrowDown") { ev.preventDefault(); paletteMove(1); }
+  else if (ev.key === "ArrowUp") { ev.preventDefault(); paletteMove(-1); }
+  else if (ev.key === "Enter") { const item = pItems[pSel]; if (item) { paletteClose(); item.run(); } }
 });
+pBackdrop.addEventListener("click", (ev) => { if (ev.target === pBackdrop) paletteClose(); });
+pInput.addEventListener("input", () => paletteBuild(pInput.value));
+
 load();
 setInterval(load, 60000);
 </script>

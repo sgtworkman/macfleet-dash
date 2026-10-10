@@ -1,5 +1,14 @@
 # macfleet-dash change log
 
+## [0.4.0] - 2026-10-10
+
+- Serving-chip generation rate: opt-in `bench = true` per host runs one small
+  completion per cycle and shows end-to-end tok/s next to the model id.
+- 7-day history: the collector keeps a second, 7-day series per host and the
+  viewer has a 24h/7d toggle (long series are decimated when drawn).
+- ⌘K / Ctrl+K command palette: jump to any host, fleet overview, theme, refresh.
+- OLED theme (true black); the theme button cycles dark → OLED → light.
+
 ## [0.3.0] - 2026-10-10
 
 - sparkDash-style layout: fixed left rail with the brand, a per-host nav
