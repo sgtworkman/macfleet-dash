@@ -222,7 +222,9 @@ function hostCard(row, historyHosts) {
     : "";
   const pw = row.power;
   const powerLine = pw
-    ? fmt(pw.cpuW, " W") + " CPU · " + fmt(pw.gpuW, " W") + " GPU · " + fmt(pw.dieTempC, "°C") + " die"
+    ? fmt(pw.cpuW, " W") + " CPU · " + fmt(pw.gpuW, " W") + " GPU" +
+      (pw.dieTempC != null ? " · " + pw.dieTempC + "°C die" : "") +
+      (pw.thermalPressure ? " · " + pw.thermalPressure + " thermal" : "")
     : "no power sampler";
   let body;
   if (!ok) {

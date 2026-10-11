@@ -1,5 +1,23 @@
 # macfleet-dash change log
 
+## [0.5.0] - 2026-10-11
+
+### Fixed
+
+- Power data disappeared from dashboards for sampler users running sampler
+  schema 2+: the collector only accepted `schema: 1`. The parser now accepts
+  any schema >= 1 with the same field contract, so watts flow again for all
+  released sampler versions (old and new).
+
+### Added
+
+- `thermalPressure` in the power block and in the host card's Power &
+  thermal line. Apple Silicon's powermetrics exposes no numeric die
+  temperature — its thermal sampler reports a pressure level ("Nominal",
+  "Moderate", …), which is now surfaced verbatim. `dieTempC` remains in
+  the schema and still appears when a platform provides it (Intel Macs);
+  on Apple Silicon it stays null rather than a fabricated value.
+
 ## [0.4.1] - 2026-10-11
 
 ### Fixed

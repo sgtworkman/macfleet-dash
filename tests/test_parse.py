@@ -18,6 +18,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 import macfleet  # noqa: E402
 
 AT = "2026-10-10T12:00:00Z"
+# History-window tests need a "current cycle" timestamp relative to real now;
+# a fixed AT goes stale (outside the 24h window) and fails a day later.
+NOW_ISO = datetime.now(timezone.utc).isoformat()
 
 # macOS probe payload — kern.boottime with the usec trap (awk $4 = sec, the
 # usec value must never be mistaken for the epoch), top-style CPU_LINE,
@@ -40,6 +43,12 @@ MACOS_FIXTURE = "\n".join([
     'POWER_JSON={"schema": 1, "generatedAt": "2026-10-10T00:00:00Z", "cpuPowerMw": 814, "gpuPowerMw": 2300, "dieTempC": 42.1}',
     'DISK_K=994662936 12345678 982317258',
 ]) + "\n"
+
+# Schema-5 sampler payload (Apple Silicon: thermalPressure instead of die temp).
+SCHEMA5_FIXTURE = MACOS_FIXTURE.replace(
+    'POWER_JSON={"schema": 1, "generatedAt": "2026-10-10T00:00:00Z", "cpuPowerMw": 814, "gpuPowerMw": 2300, "dieTempC": 42.1}',
+    'POWER_JSON={"schema": 5, "generatedAt": "2026-10-11T16:30:00Z", "cpuPowerMw": 5500, "gpuPowerMw": 41200, "dieTempC": null, "thermalPressure": "Nominal"}',
+)
 
 # Linux probe payload — /proc/stat 1s delta for CPU, MemAvailable, byte-swap
 # pair, /proc/uptime (BOOT_EPOCH empty), gpu_busy_percent.
@@ -74,13 +83,20 @@ class TestMacOsRow(unittest.TestCase):
 
     def test_available_and_identity(self):
         self.assertEqual(self.row["status"], "available")
-        self.assertEqual(self.row["power"], {"cpuW": 0.8, "gpuW": 2.3, "dieTempC": 42.1, "observedAt": "2026-10-10T00:00:00Z"})
+        self.assertEqual(self.row["power"], {"cpuW": 0.8, "gpuW": 2.3, "dieTempC": 42.1, "thermalPressure": None, "observedAt": "2026-10-10T00:00:00Z"})
         self.assertEqual(self.row["chip"], "Apple M4 Pro")
         self.assertEqual(self.row["os"], "macOS 15.2")
         self.assertEqual(self.row["arch"], "arm64")
         self.assertEqual(self.row["role"], "canary")
         self.assertEqual(self.row["host"], "macstudio")
         self.assertEqual(self.row["name"], "Mac Studio")
+
+    def test_schema5_power_carries_thermal_pressure(self):
+        row = macfleet.parse_fleet_row("macstudio", "Mac Studio", SCHEMA5_FIXTURE, AT, role="canary")
+        self.assertEqual(row["power"], {
+            "cpuW": 5.5, "gpuW": 41.2, "dieTempC": None,
+            "thermalPressure": "Nominal", "observedAt": "2026-10-11T16:30:00Z",
+        })
 
     def test_ram_and_memory_pages_16k_on_arm64(self):
         self.assertEqual(self.row["ramGb"], 24.0)
@@ -230,16 +246,16 @@ class TestConfigAndHistory(unittest.TestCase):
 
     def test_history_shape_and_unavailable_skipped(self):
         history = macfleet.update_history({"schema": 1, "hosts": {}}, [
-            {"host": "h", "status": "available", "observedAt": AT, "cpuUsedPct": 1.0,
+            {"host": "h", "status": "available", "observedAt": NOW_ISO, "cpuUsedPct": 1.0,
              "gpuUtilPct": None, "memUsedGb": 2.0, "netRxMbps": 0.5, "netTxMbps": 0.1,
              "load1m": 0.5},
-            {"host": "down", "status": "unavailable", "observedAt": AT},
+            {"host": "down", "status": "unavailable", "observedAt": NOW_ISO},
         ])
         self.assertEqual(len(history["hosts"]["h"]), 1)
         self.assertNotIn("down", history["hosts"])
         point = history["hosts"]["h"][0]
         self.assertEqual(len(point), 7)
-        self.assertEqual(point[0], AT)
+        self.assertEqual(point[0], NOW_ISO)
 
     def test_history_capped_at_288(self):
         # 300 in-window points + this cycle's point -> the cap keeps the last 288.
@@ -251,17 +267,17 @@ class TestConfigAndHistory(unittest.TestCase):
         ]
         history = {"schema": 1, "hosts": {"h": list(recent)}}
         result = macfleet.update_history(history, [
-            {"host": "h", "status": "available", "observedAt": AT}])
+            {"host": "h", "status": "available", "observedAt": NOW_ISO}])
         points = result["hosts"]["h"]
         self.assertEqual(len(points), 288)
-        self.assertEqual(points[-1][0], AT)  # newest point survives
+        self.assertEqual(points[-1][0], NOW_ISO)  # newest point survives
 
     def test_history_prunes_stale_outside_24h(self):
         # 30-hour-old points are dropped by the 24h window, cap or no cap.
         old = datetime.now(timezone.utc) - __import__("datetime").timedelta(hours=30)
         stale = [[old.isoformat(), 1, 2, 3, 4, 5, 6]] * 300
         result = macfleet.update_history({"schema": 1, "hosts": {"h": list(stale)}}, [
-            {"host": "h", "status": "available", "observedAt": AT}])
+            {"host": "h", "status": "available", "observedAt": NOW_ISO}])
         self.assertEqual(len(result["hosts"]["h"]), 1)
 
 

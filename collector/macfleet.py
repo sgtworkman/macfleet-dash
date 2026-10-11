@@ -31,7 +31,7 @@ from datetime import datetime, timedelta, timezone
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Dict, List, Optional, Tuple
 
-VERSION = "0.4.1"
+VERSION = "0.5.0"
 APP_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PROBE_PATH = os.path.join(APP_ROOT, "probe", "fleet-probe.sh")
 DEFAULT_STATE_PATH = os.path.join(APP_ROOT, "state", "macfleet-state.json")
@@ -285,11 +285,12 @@ def parse_fleet_row(host: str, label: str, raw: str, observed_at: str,
     if power_raw.startswith("{"):
         try:
             pdata = json.loads(power_raw)
-            if isinstance(pdata, dict) and pdata.get("schema") == 1:
+            if isinstance(pdata, dict) and isinstance(pdata.get("schema"), int) and pdata["schema"] >= 1:
                 power = {
                     "cpuW": round(pdata["cpuPowerMw"] / 1000, 1) if pdata.get("cpuPowerMw") is not None else None,
                     "gpuW": round(pdata["gpuPowerMw"] / 1000, 1) if pdata.get("gpuPowerMw") is not None else None,
                     "dieTempC": pdata.get("dieTempC"),
+                    "thermalPressure": pdata.get("thermalPressure"),
                     "observedAt": pdata.get("generatedAt"),
                 }
         except ValueError:
@@ -755,7 +756,7 @@ GARBAGE_FIXTURE = "ssh: connect to host 10.255.255.1 port 22: Operation timed ou
 def selftest() -> int:
     """Fixture-based parser check. No network, no ssh, no filesystem writes."""
     checks: List[Tuple[str, bool, str]] = []
-    at = "2026-10-10T12:00:00Z"
+    at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     try:
         mac = parse_fleet_row("macstudio", "Mac Studio", MACOS_FIXTURE, at, role="canary")
