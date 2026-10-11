@@ -1,4 +1,3 @@
-#!/bin/sh
 
 echo "PROBE_OK=1"
 echo "HOSTNAME=$(hostname 2>/dev/null)"
@@ -15,6 +14,7 @@ if command -v sw_vers >/dev/null 2>&1; then
   echo "VMSTAT=$(vm_stat 2>/dev/null | grep -E 'Pages free|Pages speculative' | tr '\n' ';')"
   echo "SWAP=$(sysctl -n vm.swapusage 2>/dev/null)"
   echo "NET_B=$(netstat -ib 2>/dev/null | awk '$3 ~ /^<Link/ {rx+=$7; tx+=$10} END {print rx+0, tx+0}')"
+  echo "POWER_JSON=$(cat /usr/local/var/wcc-metrics/power.json 2>/dev/null)"
 else
   echo "OS_NAME=Linux $(uname -r 2>/dev/null)"
   echo "ARCH=$(uname -m 2>/dev/null)"
@@ -30,6 +30,5 @@ else
   echo "MEM_AVAIL=$(awk '/^MemAvailable:/{print $2*1024}' /proc/meminfo 2>/dev/null)"
   echo "SWAP=$(awk '/^SwapTotal:/{t=$2} /^SwapFree:/{f=$2} END{print t*1024, f*1024}' /proc/meminfo 2>/dev/null)"
   echo "NET_B=$(grep -v '^ *lo:' /proc/net/dev 2>/dev/null | awk '{rx+=$2; tx+=$10} END {print rx+0, tx+0}')"
-  echo "POWER_JSON=$(cat /usr/local/var/wcc-metrics/power.json 2>/dev/null)"
 fi
 echo "DISK_K=$(df -k / 2>/dev/null | awk 'END{print $2, $3, $4}')"
