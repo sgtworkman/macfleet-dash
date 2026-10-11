@@ -1,5 +1,14 @@
 # macfleet-dash change log
 
+## [0.4.1] - 2026-10-11
+
+### Fixed
+
+- macOS probes never reported the optional power/thermal values: the
+  `POWER_JSON` read sat in the Linux branch of the probe script. It is now
+  verbatim back in sync with the reference probe, so sampler users get
+  watts on their dashboard. No behavior change without the optional sampler.
+
 ## [0.4.0] - 2026-10-10
 
 - Serving-chip generation rate: opt-in `bench = true` per host runs one small

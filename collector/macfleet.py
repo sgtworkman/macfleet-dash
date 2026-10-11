@@ -31,7 +31,7 @@ from datetime import datetime, timedelta, timezone
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Dict, List, Optional, Tuple
 
-VERSION = "0.4.0"
+VERSION = "0.4.1"
 APP_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PROBE_PATH = os.path.join(APP_ROOT, "probe", "fleet-probe.sh")
 DEFAULT_STATE_PATH = os.path.join(APP_ROOT, "state", "macfleet-state.json")
