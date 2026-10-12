@@ -15,6 +15,11 @@ if command -v sw_vers >/dev/null 2>&1; then
   echo "SWAP=$(sysctl -n vm.swapusage 2>/dev/null)"
   echo "NET_B=$(netstat -ib 2>/dev/null | awk '$3 ~ /^<Link/ {rx+=$7; tx+=$10} END {print rx+0, tx+0}')"
   echo "POWER_JSON=$(cat /usr/local/var/wcc-metrics/power.json 2>/dev/null)"
+  bdest="$(tmutil destinationinfo 2>/dev/null | awk '/^Name/ {sub(/^[^:]*:[[:space:]]*/, ""); print; exit}' | tr -d '\042\134')"
+  brunning="false"; pgrep -xq backupd 2>/dev/null && brunning="true"
+  blatest="$(tmutil latestbackup 2>/dev/null | grep -o '[0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}-[0-9]\{6\}' | tail -1)"
+  bepoch="$(date -j -f '%Y-%m-%d-%H%M%S' "$blatest" '+%s' 2>/dev/null)"
+  echo "BACKUP_JSON={\"schema\": 1, \"configured\": $([ -n "$bdest" ] && echo true || echo false), \"latestEpoch\": ${bepoch:-null}, \"running\": $brunning, \"dest\": \"$bdest\"}"
 else
   echo "OS_NAME=Linux $(uname -r 2>/dev/null)"
   echo "ARCH=$(uname -m 2>/dev/null)"

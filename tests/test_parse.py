@@ -22,6 +22,11 @@ AT = "2026-10-10T12:00:00Z"
 # a fixed AT goes stale (outside the 24h window) and fails a day later.
 NOW_ISO = datetime.now(timezone.utc).isoformat()
 
+# Backup-health line (macOS probe). latestEpoch 1791687600 == 2026-10-11T03:00:00Z
+# (checked independently with date -u), dest is a synthetic volume name.
+BACKUP_JSON_LINE = ('BACKUP_JSON={"schema": 1, "configured": true, "latestEpoch": 1791687600,'
+                    ' "running": false, "dest": "MiniVault"}')
+
 # macOS probe payload — kern.boottime with the usec trap (awk $4 = sec, the
 # usec value must never be mistaken for the epoch), top-style CPU_LINE,
 # vm_stat pages, vm.swapusage, netstat -ib bytes, df -k blocks.
@@ -42,6 +47,7 @@ MACOS_FIXTURE = "\n".join([
     'NET_B=1234567890 223456789',
     'POWER_JSON={"schema": 1, "generatedAt": "2026-10-10T00:00:00Z", "cpuPowerMw": 814, "gpuPowerMw": 2300, "dieTempC": 42.1}',
     'DISK_K=994662936 12345678 982317258',
+    BACKUP_JSON_LINE,
 ]) + "\n"
 
 # Schema-5 sampler payload (Apple Silicon: thermalPressure instead of die temp).
@@ -123,6 +129,16 @@ class TestMacOsRow(unittest.TestCase):
         self.assertEqual(self.row["netRxMb"], 1234.6)
         self.assertEqual(self.row["netTxMb"], 223.5)
 
+    def test_backup_health_parsed(self):
+        self.assertEqual(self.row["backup"]["configured"], True)
+        self.assertEqual(self.row["backup"]["latest"], "2026-10-11T03:00:00Z")
+        self.assertEqual(self.row["backup"]["dest"], "MiniVault")
+        self.assertEqual(self.row["backup"]["running"], False)
+        # age is computed against real now; only sanity bounds are pinned
+        self.assertIsInstance(self.row["backup"]["ageHours"], float)
+        self.assertGreaterEqual(self.row["backup"]["ageHours"], 0.0)
+        self.assertLess(self.row["backup"]["ageHours"], 10000.0)
+
     def test_boot_epoch_sec_not_usec(self):
         # The trap: kern.boottime is "{ sec = 1760000000 usec = 123456 } ...".
         # The parser must take the *first* integer (sec), never the usec, and
@@ -189,6 +205,49 @@ class TestUnavailable(unittest.TestCase):
         self.assertEqual(row["refreshFailure"], "probe timeout")
         self.assertEqual(row["role"], "r")
         self.assertNotIn("cpuUsedPct", row)  # never zero — absent means unknown
+
+
+class TestBackupHealth(unittest.TestCase):
+    """BACKUP_JSON tolerance — absent/garbage/underschema is 'unknown', never a status."""
+
+    def _row(self, fixture):
+        return macfleet.parse_fleet_row("macstudio", "Mac Studio", fixture, AT)
+
+    def test_backup_absent_is_none(self):
+        self.assertIsNone(self._row(LINUX_FIXTURE)["backup"])
+        self.assertIsNone(self._row(MACOS_FIXTURE.replace(BACKUP_JSON_LINE + "\n", ""))["backup"])
+
+    def test_malformed_backup_json_is_none(self):
+        fixture = MACOS_FIXTURE.replace(BACKUP_JSON_LINE, 'BACKUP_JSON={"schema": 1,')
+        self.assertIsNone(self._row(fixture)["backup"])
+
+    def test_schema_below_one_gated(self):
+        for bad in ('BACKUP_JSON={"schema": 0, "configured": true, "latestEpoch": 1791687600}',
+                    'BACKUP_JSON={"schema": "1", "configured": true, "latestEpoch": 1791687600}'):
+            self.assertIsNone(self._row(MACOS_FIXTURE.replace(BACKUP_JSON_LINE, bad))["backup"])
+
+    def test_null_latest_epoch_and_empty_dest_tolerated(self):
+        fixture = MACOS_FIXTURE.replace(
+            BACKUP_JSON_LINE,
+            'BACKUP_JSON={"schema": 2, "configured": true, "latestEpoch": null,'
+            ' "running": false, "dest": ""}')
+        self.assertEqual(self._row(fixture)["backup"],
+                         {"configured": True, "latest": None, "ageHours": None,
+                          "running": False, "dest": None})
+
+    def test_running_flag_passthrough(self):
+        fixture = MACOS_FIXTURE.replace(
+            BACKUP_JSON_LINE,
+            'BACKUP_JSON={"schema": 1, "configured": true, "latestEpoch": 1791687600,'
+            ' "running": true, "dest": "MiniVault"}')
+        self.assertEqual(self._row(fixture)["backup"]["running"], True)
+
+    def test_future_epoch_age_clamped_to_zero(self):
+        fixture = MACOS_FIXTURE.replace(
+            BACKUP_JSON_LINE,
+            'BACKUP_JSON={"schema": 1, "configured": true, "latestEpoch": 3000000000,'
+            ' "running": false, "dest": "MiniVault"}')
+        self.assertEqual(self._row(fixture)["backup"]["ageHours"], 0.0)
 
 
 class TestRates(unittest.TestCase):

@@ -82,6 +82,7 @@
   .chip { font-size:10.5px; padding:2px 8px; border-radius:99px; margin-left:auto; white-space:nowrap;
     border:1px solid var(--border-strong); color:var(--muted); }
   .chip.good { color:var(--good); border-color:var(--good); }
+  .chip.warn { color:var(--warn); border-color:var(--warn); }
   .chip.bad { color:var(--bad); border-color:var(--bad); }
   .chip.accent { color:var(--accent); border-color:var(--accent); background:var(--accent-soft); }
   .metrics { display:grid; grid-template-columns:1fr 1fr; gap:8px 14px; margin-top:8px; }
@@ -226,6 +227,20 @@ function hostCard(row, historyHosts) {
       (pw.dieTempC != null ? " · " + pw.dieTempC + "°C die" : "") +
       (pw.thermalPressure ? " · " + pw.thermalPressure + " thermal" : "")
     : "no power sampler";
+  const bk = row.backup;
+  const backupChip = !bk || !bk.configured ? "" :
+    '<span class="chip ' + (bk.running ? "good" : bk.ageHours == null ? "bad"
+      : bk.ageHours <= 26 ? "good" : bk.ageHours <= 50 ? "warn" : "bad") +
+    '" title="Time Machine last backup' + (bk.dest ? " — " + bk.dest : "") + '">TM ' +
+    (bk.running ? "now" : bk.ageHours == null ? "none" : bk.ageHours < 1 ? "<1h" : Math.round(bk.ageHours) + "h") +
+    "</span>";
+  const backupLine = !bk ? "not reported"
+    : !bk.configured ? "Time Machine not configured"
+    : bk.running ? "running now" + (bk.dest ? " — " + bk.dest : "")
+    : bk.ageHours == null ? "no backups yet" + (bk.dest ? " — " + bk.dest : "")
+    : (bk.ageHours < 1 ? "<1h" : fmt(Math.round(bk.ageHours * 10) / 10, "h")) + " ago" +
+      (bk.latest ? " · " + bk.latest.replace("T", " ").replace(":00Z", " UTC") : "") +
+      (bk.dest ? " · " + bk.dest : "");
   let body;
   if (!ok) {
     body = '<div class="err">No answer — ' + (row.refreshFailure || "probe failed") +
@@ -252,6 +267,7 @@ function hostCard(row, historyHosts) {
         metric("Chip", [row.chip, row.arch].filter(Boolean).join(" · ") || "—") +
         metric("OS", row.os || "—") +
         metric("Power & thermal", powerLine) +
+        metric("Backup", backupLine) +
         metric("Disk", row.diskUsedGb != null ? row.diskUsedGb + " used / " + row.diskTotalGb + " total GB" : "—") +
         metric("Hostname", row.hostname || "—") +
         metric("Cumulative net", row.netRxMb != null ? row.netRxMb + " ↓ / " + row.netTxMb + " ↑ MB" : "—") +
@@ -265,7 +281,7 @@ function hostCard(row, historyHosts) {
   return '<div class="card ' + (open ? "open" : "") + '" id="host-' + row.host + '" data-host="' + row.host + '">' +
     '<div class="card-head"><h2>' + (row.name || row.host) + "</h2>" +
     '<span class="chip ' + (ok ? "good" : "bad") + '">' + (ok ? "Online" : "No answer") + "</span>" +
-    serving + tail + '</div><div class="role">' + (row.role || row.note || "") + "</div>" + body + "</div>";
+    serving + tail + backupChip + '</div><div class="role">' + (row.role || row.note || "") + "</div>" + body + "</div>";
 }
 
 function render() {

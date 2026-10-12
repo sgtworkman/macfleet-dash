@@ -1,5 +1,21 @@
 # macfleet-dash change log
 
+## [0.6.0] - 2026-10-11
+
+### Added
+
+- Backup health: the probe reports Time Machine state on macOS (read-only
+  `tmutil destinationinfo` + `tmutil latestbackup`, plus a `pgrep` check for
+  `backupd` — no sudo, nothing is started or deleted), and the viewer shows a
+  `TM` chip per host: green while the last backup is under 26 h old, amber to
+  50 h, red past that or when a configured destination has no backups yet,
+  and "TM now" while a backup is running. Expanded host detail adds the last
+  backup time (UTC) and destination; the `--live` summary table gains a
+  `tm …` field. Hosts without backup data (Linux, or tmutil unavailable)
+  show nothing new — absent means unknown, never a fabricated status.
+  The collector parses `BACKUP_JSON` behind a `schema >= 1` gate, same
+  tolerance rules as `POWER_JSON`.
+
 ## [0.5.0] - 2026-10-11
 
 ### Fixed

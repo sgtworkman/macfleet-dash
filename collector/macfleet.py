@@ -31,7 +31,7 @@ from datetime import datetime, timedelta, timezone
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Dict, List, Optional, Tuple
 
-VERSION = "0.5.0"
+VERSION = "0.6.0"
 APP_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PROBE_PATH = os.path.join(APP_ROOT, "probe", "fleet-probe.sh")
 DEFAULT_STATE_PATH = os.path.join(APP_ROOT, "state", "macfleet-state.json")
@@ -296,6 +296,32 @@ def parse_fleet_row(host: str, label: str, raw: str, observed_at: str,
         except ValueError:
             power = None
 
+    # Backup health (macOS probe: read-only tmutil). Absent line or garbage =
+    # no backup data, never a fabricated status. latestEpoch (local-time stamp
+    # from the backup dir name) is converted to UTC ISO + age here.
+    backup = None
+    backup_raw = fields.get("BACKUP_JSON") or ""
+    if backup_raw.startswith("{"):
+        try:
+            bdata = json.loads(backup_raw)
+            if isinstance(bdata, dict) and isinstance(bdata.get("schema"), int) and bdata["schema"] >= 1:
+                latest_epoch = bdata.get("latestEpoch")
+                latest_iso = None
+                age_hours = None
+                if isinstance(latest_epoch, int):
+                    latest_iso = datetime.fromtimestamp(
+                        latest_epoch, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                    age_hours = round(max((time.time() - latest_epoch) / 3600.0, 0.0), 1)
+                backup = {
+                    "configured": bool(bdata.get("configured")),
+                    "latest": latest_iso,
+                    "ageHours": age_hours,
+                    "running": bool(bdata.get("running")),
+                    "dest": bdata.get("dest") if isinstance(bdata.get("dest"), str) and bdata.get("dest") else None,
+                }
+        except ValueError:
+            backup = None
+
     return {
         "host": host,
         "name": label,
@@ -315,6 +341,7 @@ def parse_fleet_row(host: str, label: str, raw: str, observed_at: str,
         "netRxMb": net_rx_mb,
         "netTxMb": net_tx_mb,
         "power": power,
+        "backup": backup,
         "diskTotalGb": round(disk_kb[0] / (1024 ** 2), 1) if len(disk_kb) == 3 else None,
         "diskUsedGb": round(disk_kb[1] / (1024 ** 2), 1) if len(disk_kb) == 3 else None,
         "diskFreeGb": round(disk_kb[2] / (1024 ** 2), 1) if len(disk_kb) == 3 else None,
@@ -687,7 +714,15 @@ def print_table(payload: Dict[str, Any]) -> None:
         if row.get("status") != "available":
             print("  %-12s NO ANSWER — %s" % (row.get("name"), row.get("refreshFailure", "")))
             continue
-        print("  %-12s cpu %s%%  gpu %s%%  mem %s/%sGB%s  disk free %sGB  net %s/%s MB/s  load %s  up %sd  (%s)" % (
+        b = row.get("backup") or {}
+        if b.get("running"):
+            tm_txt = "  tm running"
+        elif b.get("configured"):
+            tm_txt = "  tm %s" % (("%sh" % b["ageHours"]) if b.get("ageHours") is not None
+                                 else "no backup yet")
+        else:
+            tm_txt = ""
+        print("  %-12s cpu %s%%  gpu %s%%  mem %s/%sGB%s  disk free %sGB  net %s/%s MB/s  load %s  up %sd%s  (%s)" % (
             row.get("name"),
             _fmt(row.get("cpuUsedPct")), _fmt(row.get("gpuUtilPct")),
             _fmt(row.get("memUsedGb")), _fmt(row.get("ramGb")),
@@ -695,6 +730,7 @@ def print_table(payload: Dict[str, Any]) -> None:
             _fmt(row.get("diskFreeGb")),
             _fmt(row.get("netRxMbps")), _fmt(row.get("netTxMbps")),
             _fmt(row.get("load1m")), _fmt(row.get("uptimeDays")),
+            tm_txt,
             row.get("chip") or row.get("os") or "unknown",
         ))
 
@@ -713,6 +749,11 @@ def write_viewer_data(payload: Dict[str, Any]) -> str:
 # Selftest — fixtures only, zero network
 # --------------------------------------------------------------------------
 
+# Backup-health line: latestEpoch 1791687600 == 2026-10-11T03:00:00Z,
+# dest is a synthetic volume name.
+BACKUP_JSON_LINE = ('BACKUP_JSON={"schema": 1, "configured": true, "latestEpoch": 1791687600,'
+                    ' "running": false, "dest": "MiniVault"}')
+
 MACOS_FIXTURE = "\n".join([
     'PROBE_OK=1',
     'HOSTNAME=studio.local',
@@ -729,6 +770,7 @@ MACOS_FIXTURE = "\n".join([
     'SWAP=total = 3072.00M used = 1024.00M free = 2048.00M (encrypted)',
     'NET_B=1234567890 223456789',
     'DISK_K=994662936 12345678 982317258',
+    BACKUP_JSON_LINE,
 ]) + "\n"
 
 LINUX_FIXTURE = "\n".join([
@@ -776,6 +818,12 @@ def selftest() -> int:
              (mac["load1m"], mac["load5m"])),
             ("macos boottime sec (not usec)", isinstance(mac["uptimeDays"], float)
              and 0 < mac["uptimeDays"] < 36500, mac["uptimeDays"]),
+            ("macos backup latest", (mac["backup"] or {}).get("latest") == "2026-10-11T03:00:00Z",
+             (mac["backup"] or {}).get("latest")),
+            ("macos backup dest", (mac["backup"] or {}).get("dest") == "MiniVault",
+             (mac["backup"] or {}).get("dest")),
+            ("macos backup age sane", isinstance((mac["backup"] or {}).get("ageHours"), float)
+             and (mac["backup"] or {}).get("ageHours", -1) >= 0, (mac["backup"] or {}).get("ageHours")),
         ]
     except Exception as exc:  # noqa: BLE001
         checks.append(("macos parse", False, repr(exc)))
@@ -789,6 +837,7 @@ def selftest() -> int:
             ("linux swap", lin["swapUsedGb"] == 1.0, lin["swapUsedGb"]),
             ("linux uptime", lin["uptimeDays"] == 11.4, lin["uptimeDays"]),
             ("linux gpu", lin["gpuUtilPct"] == 12, lin["gpuUtilPct"]),
+            ("linux backup absent (not fabricated)", lin["backup"] is None, lin["backup"]),
         ]
     except Exception as exc:  # noqa: BLE001
         checks.append(("linux parse", False, repr(exc)))
@@ -798,6 +847,26 @@ def selftest() -> int:
         checks.append(("garbage rejected", False, "no exception"))
     except RuntimeError:
         checks.append(("garbage rejected", True, "RuntimeError"))
+
+    try:
+        malformed = parse_fleet_row("x", "x",
+                                    MACOS_FIXTURE.replace(BACKUP_JSON_LINE, "BACKUP_JSON=oops"), at)
+        checks.append(("backup malformed rejected", malformed["backup"] is None, malformed["backup"]))
+        gated = parse_fleet_row("x", "x",
+                                MACOS_FIXTURE.replace(BACKUP_JSON_LINE,
+                                                      'BACKUP_JSON={"schema": 0, "configured": true}'), at)
+        checks.append(("backup schema<1 gated", gated["backup"] is None, gated["backup"]))
+        norun = parse_fleet_row("x", "x",
+                                MACOS_FIXTURE.replace(
+                                    BACKUP_JSON_LINE,
+                                    'BACKUP_JSON={"schema": 1, "configured": true, "latestEpoch": null,'
+                                    ' "running": true, "dest": ""}'), at)
+        checks.append(("backup null epoch tolerated",
+                       norun["backup"] == {"configured": True, "latest": None, "ageHours": None,
+                                           "running": True, "dest": None},
+                       norun["backup"]))
+    except Exception as exc:  # noqa: BLE001
+        checks.append(("backup tolerant parse", False, repr(exc)))
 
     prev = {"hosts": [{
         "host": "macstudio", "status": "available",

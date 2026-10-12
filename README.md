@@ -12,7 +12,8 @@ One small collector polls every Mac you register, one probe script answers on
 each of them, and a single-file viewer shows CPU, GPU, memory, swap, disk,
 network, load and uptime per host — with 24-hour and 7-day sparklines, a ⌘K
 command palette, dark/OLED/light themes, serving-model state (with an opt-in
-tok/s generation probe), and tailnet presence. Python 3.9+
+tok/s generation probe), tailnet presence, and Time Machine backup health on
+macOS. Python 3.9+
 standard library only: no node_modules, no build step, no third-party runtime
 packages anywhere.
 
@@ -116,7 +117,9 @@ Collector flags: `--live` (probe now — nothing is probed without it),
   loopback or tailscale address only. `metrics_server.py` warns and
   `install.sh` documents this; the server never binds 0.0.0.0 by default.
 - **Read-only.** The probe runs `sysctl`, `ps`, `top -l`, `ioreg`, `vm_stat`,
-  `netstat -ib`, `df -k`, `uptime` and their `/proc`-based Linux equivalents.
+  `netstat -ib`, `df -k`, `uptime`, `tmutil` (destination info + latest backup
+  lookup only — never starts or deletes a backup) and their `/proc`-based
+  Linux equivalents.
   It reads aggregate counters only: no process lists, no file contents, no
   credentials, nothing that needs sudo. The collector's SSH use is
   `BatchMode=yes` with `ConnectTimeout=8` — key-based, non-interactive, no
@@ -139,6 +142,7 @@ Collector flags: `--live` (probe now — nothing is probed without it),
 | Disk | `df -k /` | `df -k /` |
 | Load | `sysctl vm.loadavg` | `/proc/loadavg` |
 | Uptime | `kern.boottime` sec (usec trap handled) | `/proc/uptime` |
+| Backup health | `tmutil destinationinfo` + `tmutil latestbackup` (last backup age, destination, running state) | — (not reported) |
 
 A host that does not answer reports **unavailable** — never zero — and never
 blocks the other hosts. Network counter resets (reboots) produce null rates
