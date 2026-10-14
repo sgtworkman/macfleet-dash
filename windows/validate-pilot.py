@@ -9,21 +9,22 @@ from pathlib import Path
 def metric(value):
     return value is None or isinstance(value,(int,float)) and not isinstance(value,bool) and math.isfinite(value) and value>=0
 
-def validate(sample,expected_host,now=None):
+def sample_time(text):
+    match=re.fullmatch(r'(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,7}))?(Z|[+-]\d{2}:\d{2})',text)
+    if not match:raise ValueError('Timestamp format unverified')
+    fraction='.'+match[2].ljust(6,'0')[:6] if match[2] else ''
+    return datetime.fromisoformat(match[1]+fraction+match[3].replace('Z','+00:00'))
+
+def validate_structure(sample,expected_host):
+    """Validate identity/metrics only; this does not validate clock or freshness."""
     if not isinstance(sample,dict) or sample.get('schema')!='workman.windows-fleet-pilot.v1':raise ValueError('Unrecognized pilot schema')
     if str(sample.get('host','')).casefold()!=expected_host.casefold():raise ValueError('Host identity mismatch')
     if sample.get('units')!='GiB' or sample.get('status') not in ('available','partial','unavailable'):raise ValueError('Units or sample state unverified')
     try:
         # .NET's round-trip format uses seven fractional digits. Python 3.9
         # accepts at most microseconds; preserve the source text in the receipt.
-        text=sample['observedAt']
-        match=re.fullmatch(r'(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,7}))?(Z|[+-]\d{2}:\d{2})',text)
-        if not match:raise ValueError('Timestamp format unverified')
-        fraction='.'+match[2].ljust(6,'0')[:6] if match[2] else ''
-        at=datetime.fromisoformat(match[1]+fraction+match[3].replace('Z','+00:00'))
+        at=sample_time(sample['observedAt'])
     except (KeyError,ValueError,TypeError):raise ValueError('Sample timestamp unverified')
-    now=now or datetime.now(timezone.utc)
-    if at.tzinfo is None or (at-now).total_seconds()>90:raise ValueError('Sample clock unverified')
     for field in ('cpuUsedPct','ramGb','memUsedGb','uptimeDays','gpuUtilPct','temperatureC','powerW'):
         if field not in sample or not metric(sample[field]):raise ValueError('Invalid or missing metric: '+field)
     cpu=sample['cpuUsedPct']
@@ -45,6 +46,12 @@ def validate(sample,expected_host,now=None):
         if not isinstance(adapter,dict) or any(k not in adapter or not metric(adapter[k]) for k in ('receivedBytes','sentBytes')):raise ValueError('Network counters unverified')
     if sample['networkState']=='available' and (not networks or any(a[k] is None for a in networks for k in ('receivedBytes','sentBytes'))):raise ValueError('Available network header conflicts with rows')
     if sample['status']=='available' and sample['networkState']!='available':raise ValueError('Available sample conflicts with network state')
+    return at
+
+def validate(sample,expected_host,now=None):
+    at=validate_structure(sample,expected_host)
+    now=now or datetime.now(timezone.utc)
+    if at.tzinfo is None or (at-now).total_seconds()>90:raise ValueError('Sample clock unverified')
     return {'status':'sample-validated','host':sample['host'],'observedAt':sample['observedAt'],'sampleState':sample['status'],'stale':(now-at).total_seconds()>600,'scope':'JSON identity, metric and arithmetic validation only; not installation, live-host or persistence proof'}
 
 def main():

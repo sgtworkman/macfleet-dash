@@ -1,5 +1,43 @@
 # macfleet-dash change log
 
+## [0.8.0] - 2026-10-14
+
+### Added
+
+- One fleet with separate All computers, Mac/Linux, Windows, Servers and Range
+  computers views. Location filters intersect the groups without duplicating
+  host counts. Pending inventory is visible but excluded from monitored totals.
+- Optional private encrypted WinRM bridge executing the reviewed Windows
+  collector in memory. It uses existing operator-selected access; no Windows
+  install, listener, firewall, VPN or credential changes are performed.
+- Individual fixed-drive health and per-adapter network counters/rates in
+  Windows details, with last authenticated poll and original Windows timestamp.
+- Explicit expected-hours policies for availability warnings. Unknown schedules
+  and unverified inventory remain unknown rather than assumed operational.
+
+### Fixed
+
+- Native WinRM command-line limits are handled by a bounded in-memory compressed
+  invocation of the same collector, preserving its identity and metric checks.
+- Windows clock skew is reported separately from authenticated receipt freshness.
+  The original strict one-shot clock validator still rejects future timestamps.
+- Failed polls retain last successful timestamps; malformed/duplicate identities
+  are rejected instead of overwriting another source's computer or counting
+  the same native Windows computer twice. Changed targets do not inherit
+  another computer's readings. Reboots invalidate cross-boot network rates.
+- Low system-drive space cannot be hidden by another drive's free capacity.
+
+### Coverage and scheduling
+
+- Viewer v0.8.0 and optional bridge v0.1.0; original health collector/probe/endpoint
+  remain v0.6.0 and require no restart.
+- Optional scheduling needs a verified operator-approved client with existing
+  private network access. A successful manual command, installed task, or a
+  zero-exit snapshot publication is not proof that unattended host polls work.
+- This source release does not enroll a range computer or claim particular
+  deployments. Runtime configuration, telemetry and actual machine inventory
+  are private, separate from the released source.
+
 ## [0.7.0] - 2026-10-14
 
 ### Added

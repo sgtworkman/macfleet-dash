@@ -1,7 +1,79 @@
-# Windows fleet pilot — prepared, not installed
+# Windows monitoring — private bridge and local pilot
 
-Version 0.1.0 · 2026-10-14. No Windows host has been contacted or enrolled by
-this package. The dashboard's Windows page is preparation status, not health.
+Bridge version 0.1.0 · viewer release v0.8.0 · 2026-10-14.
+
+## Existing private WinRM connection
+
+`collector/windows_snapshot.py` runs the reviewed PowerShell collector in memory
+on exact confirmed computers using existing WinRM access. The native script is
+gzip-encoded only to fit WinRM's command-line bound; its checks are not removed.
+NTLM message encryption is required (`message_encryption='always'`), even with
+an existing HTTP WinRM endpoint. HTTPS endpoints retain certificate validation.
+No credentials are sent to a different guessed computer, copied into snapshots
+or logged. Configured enabled endpoints must be exact private IP addresses.
+
+Only this optional bridge requires `pywinrm` and `python-dotenv`. If they are
+already installed on the selected client, reuse that runtime. Do not change
+Windows authentication, execution policy, services, firewall or VPN settings to
+make a failed read succeed. Original health collector/probe/endpoint code is
+unchanged and has no new runtime dependency.
+
+Create a private `windows-fleet.json` with schema `macfleet.windows.config.v1`
+and `hosts` rows: unique lowercase `id`, `name`, unique exact `expectedComputerName`,
+existing private WinRM `endpoint`, `kind` (`server`, `range` or `computer`),
+`site`, and boolean `enabled`. Disabled rows instead carry a `pendingReason`;
+unknown native computer names/OS can stay unset with `platform: 'unknown'`.
+Never put passwords in the configuration. The selected owner-only dotenv file
+supplies `WORKMAN_WINDOWS_SERVER_USERNAME` and `WORKMAN_WINDOWS_SERVER_PASSWORD`.
+
+```sh
+python3 collector/windows_snapshot.py --config /private/windows-fleet.json \
+  --credentials-file /private/existing-credentials.env
+```
+
+The macOS CLI verifies the already-running viewer is loopback-only on port 8791.
+It atomically writes mode-0600, gitignored `viewer/windows.json`; each failed
+host retains its actual last successful timestamps. Adapters are not summed,
+and partial/unavailable drive readings do not produce an invented machine total.
+Receipts use the client's actual authenticated poll completion. Original Windows
+timestamps and any clock warning remain visible; the strict one-shot validator
+below still rejects an unverified future clock.
+
+## Scheduling and actual enrollment
+
+Use an existing supported client scheduler or a dedicated operator-approved
+client job at a five-minute cadence. On macOS, a user LaunchAgent can use the
+explicit Python/config/credential-file arguments above, `StartInterval: 300`,
+`RunAtLoad: true`, owner-only logs and umask 077. Do not duplicate an existing
+owner. Keep a checked copy of its prior state; unloading only that owned job
+and restoring its configuration provides rollback without changing Windows.
+
+Check the actual scheduled samples and source-host results before calling
+monitoring automatic. macOS Local Network permissions may block a background
+client even when an interactive command works. Report that permission failure;
+do not weaken security or relabel a failed background poll as connected.
+Verify startup persistence at an ordinary later login/startup; do not reboot an
+active computer solely to produce a receipt.
+
+Range computers need an existing protected automatic route before enrollment.
+Interactive Getscreen access alone is not a polling credential. Never reuse
+server credentials against an unconfirmed client, open a port, enroll a VPN
+peer or generate an API credential without the required specific authority.
+Leave active recovery/classroom owners and POS transactions untouched.
+
+Optional `expectedHours` can be `"always"`, or an explicit policy such as
+`{"timeZone":"America/New_York","days":{"mon":[{"start":"09:00","end":"17:00"}]}}`.
+This is an illustrative schedule, not a range's business hours. A missing day
+or policy is unknown; an explicit empty interval list means not expected that
+day. Availability warnings are suppressed only outside configured intervals;
+readings and last-seen states remain truthful.
+
+## Local one-shot pilot — prepared, not installed
+
+Collector version 0.1.0 · 2026-10-14. The one-shot script installs nothing and
+does not itself establish automatic enrollment. The bridge above contacts only
+configured, identity-checked endpoints; this public guide does not assert any
+particular operator's deployment or coverage.
 
 The first pilot is a one-shot read on one confirmed computer. Keep the actual
 host inventory in private operator records; this public package does not
@@ -53,9 +125,10 @@ back. Discard a captured pilot JSON through normal file recovery if unneeded.
 ## Local verification and limits
 
 The JSON validator, arithmetic/unknown-value fixtures and read-only command
-inventory are tested locally. This Mac has no PowerShell runtime; actual
-PowerShell execution, Windows permissions, physical-host readings and reboot
-persistence remain unverified. No sample fixture is injected into live data.
+inventory are tested locally. These checks do not prove any particular host's
+PowerShell execution, permissions, physical readings or startup persistence;
+verify those through that operator's real protected route. No sample fixture
+is injected into live data.
 
 References: [local Get-CimInstance behavior](https://learn.microsoft.com/en-us/powershell/module/cimcmdlets/get-ciminstance?view=powershell-5.1),
 [processor counters](https://learn.microsoft.com/en-us/windows/win32/cimwin32prov/win32-processor),

@@ -6,12 +6,12 @@
 sparkDash-style health dashboard for a fleet of Macs — Apple Silicon + Intel,
 macOS + Linux, zero sudo, zero dependencies.
 
-**Viewer release v0.7.0.** The health collector and probe remain v0.6.0;
+**Viewer release v0.8.0.** The health collector and probe remain v0.6.0;
 their existing protocol and running services are unchanged. See the
-[change log](CHANGELOG.md) and [release notes](https://github.com/sgtworkman/macfleet-dash/releases/tag/v0.7.0).
+[change log](CHANGELOG.md) and [release notes](https://github.com/sgtworkman/macfleet-dash/releases/tag/v0.8.0).
 
 The screenshots below are synthetic examples from the earlier viewer.
-Version 0.7.0 uses resource bars and hourly history instead of overview CPU lines.
+Versions 0.7.0+ use resource bars and hourly history instead of overview CPU lines.
 
 ![macfleet-dash fleet view](docs/screenshot.png)
 
@@ -20,9 +20,10 @@ each of them, and a static viewer shows CPU, GPU, memory, swap, disk,
 network, load and uptime per host — with clear resource bars, focused details,
 24-hour and 7-day hourly activity, a ⌘K command palette, dark/OLED/light themes,
 serving-model state (with an opt-in end-to-end completion benchmark), tailnet presence, and Time Machine backup health on
-macOS. Python 3.9+
-standard library only: no node_modules, no build step, no third-party runtime
-packages anywhere.
+macOS. The Mac/Linux collector uses the Python 3.9+ standard library only:
+no node_modules, no build step, and no third-party core runtime packages.
+The optional Windows client uses existing `pywinrm` and `python-dotenv` packages;
+it does not add dependencies to the original collector or Windows hosts.
 
 Focused host detail — full metrics, optional hourly history, benchmark rate and (where the
 owner approved a sampler) power/thermal:
@@ -40,7 +41,8 @@ macfleet-dash/
 ├── viewer/fleet-model.mjs      validated metrics and fixed-scale hourly history
 ├── collector/token_usage.py   aggregate-only read of local Hermes usage
 ├── collector/publish_token_usage.py  private token snapshot; existing WCC cadence
-├── windows/                   prepared one-shot Windows pilot, not enrolled
+├── collector/windows_snapshot.py  optional encrypted private WinRM bridge
+├── windows/                   reviewed local Windows collector and validator
 └── tests/test_parse.py        fixture-based unit tests (stdlib unittest)
 ```
 
@@ -137,7 +139,8 @@ Collector flags: `--live` (probe now — nothing is probed without it),
   credentials, nothing that needs sudo. The collector's SSH use is
   `BatchMode=yes` with `ConnectTimeout=8` — key-based, non-interactive, no
   password prompts, no agent hacks.
-- **No secrets.** The viewer fetches only local `data.json` and `token-usage.json`.
+- **No secrets.** The viewer fetches only local `data.json`, `token-usage.json`,
+  `windows.json` and `fleet-registry.json`.
   The collector talks only to registered hosts. An already opted-in benchmark
   sends one fixed short completion; it is not passive traffic measurement.
 
@@ -176,6 +179,33 @@ rather than false spikes. Sensor temperature and power draw need sudo
   line graphs. Hourly CPU bars use the same 0–100% scale and disclose missing
   hours and sample counts. Unknown values are not rendered as zero.
 
+## Fleet groups and Windows monitoring · v0.8.0
+
+All computers, Mac/Linux, Windows, Servers and Range computers are filtered views
+of one unique host registry. A computer can appear in its OS and role views
+without being counted twice. Location filters intersect each group. Not-enrolled
+inventory is shown separately and contributes neither healthy readings nor
+resource totals. Unknown host identities, sites and operating hours stay unknown.
+
+The optional Windows bridge executes the exact reviewed collector in memory on
+already-accessible private WinRM endpoints. It requires the optional `pywinrm`
+and `python-dotenv` packages; the original health collector remains standard
+library only and unchanged. No Windows installation, public listener, service
+restart, firewall opening, credential change or VPN enrollment is included.
+See [Windows connection and scheduling](windows/README.md).
+
+Windows snapshot freshness uses the cockpit's receipt of an authenticated poll.
+The original Windows timestamp is retained separately; a clock discrepancy over
+90 seconds produces a visible warning, not a silently corrected server clock.
+Every fixed drive is shown and checked separately. Network adapter counters and
+rates are never summed; a rate needs two successful readings of that adapter.
+
+Private `windows-fleet.json`, `viewer/windows.json` and `viewer/fleet-registry.json`
+are gitignored. Supply your own confirmed inventory/access before claiming
+range coverage. Interactive remote-control access does not prove automatic
+monitoring. Explicit per-host expected-hours policies can suppress off-hours
+availability warnings; the bridge never invents range opening times.
+
 ## Viewer release v0.7.0 · 2026-10-14
 
 The viewer is versioned independently of the unchanged running collector
@@ -207,8 +237,9 @@ Hermes config change, remote install or listener widening is included. Do not
 publish that private runtime snapshot or widen the viewer binding.
 
 Offline checks: `node --test tests/*.test.mjs` and
-`python3 -m unittest discover -s tests -p 'test_*.py'`. The Windows package is
-preparation only; see [pilot limits and verification](windows/README.md).
+`python3 -m unittest discover -s tests -p 'test_*.py'`. The v0.7.0 Windows package
+was preparation only; v0.8.0 adds the optional private bridge described above.
+See [connection limits and verification](windows/README.md).
 
 ## License
 

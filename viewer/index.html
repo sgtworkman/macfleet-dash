@@ -4,29 +4,30 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>MacFleet Dash — computer health</title>
-  <meta name="macfleet-viewer-version" content="0.7.0">
+  <meta name="macfleet-viewer-version" content="0.8.0">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='5' width='24' height='17' rx='2' fill='none' stroke='%23f0b33d' stroke-width='2'/%3E%3Cpath d='M2 27h28' stroke='%23f0b33d' stroke-width='2'/%3E%3C/svg%3E">
   <script>try{const t=localStorage.getItem('macfleet-theme');if(['dark','oled','light'].includes(t))document.documentElement.dataset.theme=t;}catch{}</script>
-  <link rel="stylesheet" href="fleet.css?v=0.7.0">
+  <link rel="stylesheet" href="fleet.css?v=0.8.0">
 </head>
 <body>
   <a href="#main" class="skip">Skip to readings</a>
   <aside class="rail" aria-label="MacFleet navigation">
-    <div class="rail-head"><a class="brand" href="#overview"><svg aria-hidden="true" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="5" width="24" height="17" rx="2"/><path d="M2 27h28"/></svg><span>MacFleet Dash<small id="viewerVersion">v0.7.0</small></span></a><button id="navToggle" aria-controls="railBody" aria-expanded="false">Menu</button></div>
+    <div class="rail-head"><a class="brand" href="#overview"><svg aria-hidden="true" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="5" width="24" height="17" rx="2"/><path d="M2 27h28"/></svg><span>MacFleet Dash<small id="viewerVersion">v0.8.0</small></span></a><button id="navToggle" aria-controls="railBody" aria-expanded="false">Menu</button></div>
     <button id="searchBtn" class="search-button" aria-haspopup="dialog"><span>Search hosts…</span><kbd>⌘ K</kbd></button>
-    <div class="rail-body" id="railBody"><nav id="railnav" aria-label="Computers"><a class="nav-link" href="#overview">Overview</a></nav>
-    <div class="workspace"><p class="rail-label">Workspace</p><a id="tokensNav" class="nav-link" href="#tokens"><span class="dot" aria-hidden="true"></span>Tokens</a><a id="windowsNav" class="nav-link" href="#windows"><span class="dot" aria-hidden="true"></span><span>Windows pilot<small style="display:block">Not enrolled</small></span></a></div>
+    <div class="rail-body" id="railBody"><nav id="groupnav" aria-label="Fleet groups"><a class="nav-link" href="#overview">All computers</a></nav><p class="rail-label host-list-label">Computers</p><nav id="railnav" aria-label="Computers"></nav>
+    <div class="workspace"><p class="rail-label">Workspace</p><a id="tokensNav" class="nav-link" href="#tokens"><span class="dot" aria-hidden="true"></span>Tokens</a></div>
     <label class="theme-control">Theme<select id="themeSelect"><option value="dark">Dark</option><option value="oled">OLED</option><option value="light">Light</option></select></label></div>
   </aside>
   <main id="main">
     <a id="back" class="back" href="#overview" hidden>← Back to overview</a>
     <header class="topbar"><div><h1 id="pageTitle" tabindex="-1">Overview</h1><p id="subtitle" class="subtitle">Your computers, at a glance</p></div><div class="top-actions"><small id="updated">Waiting for a verified sample</small><button id="refreshBtn">↻ Refresh</button></div></header>
     <p id="loadNotice" class="notice" role="status" hidden></p>
+    <div id="fleetFilters" class="fleet-filters"><label>Location <select id="siteFilter" aria-label="Location"><option value="all">All locations</option></select></label><small id="coverageLabel"></small></div>
     <nav id="tabs" class="tabs" aria-label="Host views" hidden></nav>
     <div id="content"><p class="empty">Loading fleet readings…</p></div>
-    <footer class="footer"><span>Read-only viewer · samples about every 5 minutes · Windows not enrolled</span><span id="footerVersion">Viewer v0.7.0</span></footer>
+    <footer class="footer"><span id="footerCoverage">Read-only health · samples about every 5 minutes</span><span id="footerVersion">Viewer v0.8.0</span></footer>
   </main>
   <dialog id="palette" aria-labelledby="paletteTitle"><div class="dialog-head"><h2 id="paletteTitle">Find a computer or view</h2><button id="closePalette">Close search</button></div><input id="paletteInput" type="search" placeholder="Host, tokens or pilot…" aria-label="Search hosts and views" aria-describedby="paletteSelection"><ul id="paletteList"></ul><small id="paletteSelection" aria-live="polite"></small></dialog>
-  <script type="module" src="fleet-app.mjs?v=0.7.0"></script>
+  <script type="module" src="fleet-app.mjs?v=0.8.0"></script>
 </body>
 </html>
