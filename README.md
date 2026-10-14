@@ -6,18 +6,25 @@
 sparkDash-style health dashboard for a fleet of Macs — Apple Silicon + Intel,
 macOS + Linux, zero sudo, zero dependencies.
 
+**Viewer release v0.7.0.** The health collector and probe remain v0.6.0;
+their existing protocol and running services are unchanged. See the
+[change log](CHANGELOG.md) and [release notes](https://github.com/sgtworkman/macfleet-dash/releases/tag/v0.7.0).
+
+The screenshots below are synthetic examples from the earlier viewer.
+Version 0.7.0 uses resource bars and hourly history instead of overview CPU lines.
+
 ![macfleet-dash fleet view](docs/screenshot.png)
 
 One small collector polls every Mac you register, one probe script answers on
-each of them, and a single-file viewer shows CPU, GPU, memory, swap, disk,
-network, load and uptime per host — with 24-hour and 7-day sparklines, a ⌘K
-command palette, dark/OLED/light themes, serving-model state (with an opt-in
-tok/s generation probe), tailnet presence, and Time Machine backup health on
+each of them, and a static viewer shows CPU, GPU, memory, swap, disk,
+network, load and uptime per host — with clear resource bars, focused details,
+24-hour and 7-day hourly activity, a ⌘K command palette, dark/OLED/light themes,
+serving-model state (with an opt-in end-to-end completion benchmark), tailnet presence, and Time Machine backup health on
 macOS. Python 3.9+
 standard library only: no node_modules, no build step, no third-party runtime
 packages anywhere.
 
-Expanded host detail — full metrics, sparklines, serving rate and (where the
+Focused host detail — full metrics, optional hourly history, benchmark rate and (where the
 owner approved a sampler) power/thermal:
 
 ![expanded host detail](docs/detail.png)
@@ -28,7 +35,12 @@ macfleet-dash/
 ├── endpoint/metrics_server.py  read-only /metrics.txt endpoint (for hosts without SSH)
 ├── endpoint/install.sh         macOS LaunchAgent installer for the endpoint
 ├── collector/macfleet.py       collector: probes, parses, rates, history, serves viewer
-├── viewer/index.html           single-file dashboard (fetches data.json)
+├── viewer/index.html           static dashboard shell
+├── viewer/fleet-app.mjs        rendering/controls; reads local snapshots only
+├── viewer/fleet-model.mjs      validated metrics and fixed-scale hourly history
+├── collector/token_usage.py   aggregate-only read of local Hermes usage
+├── collector/publish_token_usage.py  private token snapshot; existing WCC cadence
+├── windows/                   prepared one-shot Windows pilot, not enrolled
 └── tests/test_parse.py        fixture-based unit tests (stdlib unittest)
 ```
 
@@ -100,8 +112,9 @@ python3 collector/macfleet.py --serve 8780
 **4. Check your work:**
 
 ```sh
-python3 tests/test_parse.py          # unit tests — fixtures only, no network
+python3 -m unittest discover -s tests -p 'test_*.py'  # fixture tests; no network
 python3 collector/macfleet.py --selftest
+node --test tests/*.test.mjs         # development checks; Node 22+, not a runtime dependency
 ```
 
 Collector flags: `--live` (probe now — nothing is probed without it),
@@ -109,7 +122,7 @@ Collector flags: `--live` (probe now — nothing is probed without it),
 `--state`, `--selftest`. State lives in `state/macfleet-state.json`
 (override with `--state` or `MACFLEET_STATE`); the viewer reads
 `viewer/data.json`, rewritten atomically every cycle. 288 cycles (24 h at a
-5-minute cadence) of per-host history are kept for the sparklines.
+5-minute cadence) of per-host history are kept, plus bounded 7-day history.
 
 ## Security model
 
@@ -124,8 +137,9 @@ Collector flags: `--live` (probe now — nothing is probed without it),
   credentials, nothing that needs sudo. The collector's SSH use is
   `BatchMode=yes` with `ConnectTimeout=8` — key-based, non-interactive, no
   password prompts, no agent hacks.
-- **No secrets, no outbound calls.** The collector talks only to your hosts;
-  the viewer only fetches `data.json`. Nothing phones home.
+- **No secrets.** The viewer fetches only local `data.json` and `token-usage.json`.
+  The collector talks only to registered hosts. An already opted-in benchmark
+  sends one fixed short completion; it is not passive traffic measurement.
 
 ## Supported probes
 
@@ -157,9 +171,44 @@ rather than false spikes. Sensor temperature and power draw need sudo
   Command Center's Mac Fleet panel; `tests/test_parse.py` pins the macOS and
   Linux fixtures, the kern.boottime usec trap, the `/proc/stat` delta math
   and both swap formats.
-- The viewer is one HTML file: inline CSS/JS, dark/light via
-  `prefers-color-scheme`, inline-SVG sparklines, no framework, no external
-  requests beyond `data.json`.
+- The viewer is static HTML/CSS/native JavaScript modules: no framework, no
+  runtime dependencies and no external browser requests. Overview has no CPU
+  line graphs. Hourly CPU bars use the same 0–100% scale and disclose missing
+  hours and sample counts. Unknown values are not rendered as zero.
+
+## Viewer release v0.7.0 · 2026-10-14
+
+The viewer is versioned independently of the unchanged running collector
+(v0.6.0). This update needs no service restart. Source freshness remains
+separate from viewer version. Storage capacity used is total minus available;
+raw filesystem-used remains in Details to explain APFS shared-container space.
+
+Tokens reads the existing local Hermes `session_model_usage` table, including
+immediate profile databases only. A retained profile is not proof of a running agent. No messages, prompts, credentials,
+session IDs or billing URLs are exported. Profile aliases and migrated duplicate
+session/model records are counted once. Local and cloud/subscription categories
+come from saved endpoints, not model names or guessed prices. Record timestamps
+are not daily allocation, lifetime counts or provider invoices. Historical
+model attribution may be a session's last saved model, not each prior call.
+Recorded input, output, cache-read and cache-write counters stay separate; no
+combined total is inferred across legacy/subscription accounting. The MLX
+benchmark is separate from both usage and all-service traffic totals.
+
+The Workman Command Center integration invokes `collector/publish_token_usage.py`
+after its existing local refresh. This optional macOS publisher expects an
+already-running loopback viewer on port 8791 and the private `macfleet.toml`
+configuration; it does not install a scheduler or start a viewer. Other
+installations must explicitly configure their own local invocation before
+calling token coverage available. The publisher verifies the loopback listener,
+reads SQLite in `mode=ro`, and atomically replaces the gitignored, mode-0600
+`viewer/token-usage.json`. A failed read preserves the previous timestamp;
+the viewer marks token snapshots older than 10 minutes stale. No new job,
+Hermes config change, remote install or listener widening is included. Do not
+publish that private runtime snapshot or widen the viewer binding.
+
+Offline checks: `node --test tests/*.test.mjs` and
+`python3 -m unittest discover -s tests -p 'test_*.py'`. The Windows package is
+preparation only; see [pilot limits and verification](windows/README.md).
 
 ## License
 

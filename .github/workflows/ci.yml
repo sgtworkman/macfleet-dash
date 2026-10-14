@@ -30,3 +30,15 @@ jobs:
       - uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  viewer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Viewer and release tests
+        run: node --test tests/*.test.mjs
+      - name: Viewer syntax
+        run: node --check viewer/fleet-app.mjs

@@ -1,6 +1,8 @@
 # runtime state — collector-owned, not source
 state/
 viewer/data.json
+viewer/token-usage.json
+.token-usage-*
 __pycache__/
 *.pyc
 .DS_Store

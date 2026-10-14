@@ -1,5 +1,49 @@
 # macfleet-dash change log
 
+## [0.7.0] - 2026-10-14
+
+### Added
+
+- Independently versioned v0.7.0 viewer: sparkDash-style metric panels,
+  clear CPU/GPU/memory/storage bars, focused computer details and a compact
+  mobile menu. The health collector, probe and endpoint remain v0.6.0.
+- Optional 24-hour and 7-day hourly history with a common 0–100% CPU scale,
+  sample averages/peaks and explicit missing-hour coverage. The overview's
+  CPU squiggles are removed.
+- Local-model and cloud/subscription token views from retained local Hermes
+  session/model counters. Input, output and cache counters stay separate;
+  unclassified sources and incomplete coverage remain visible. Benchmarks
+  are separate from token totals and are not passive live throughput.
+- A macOS-only, loopback-verified, read-only token publisher for existing
+  local scheduling integrations. Private runtime snapshots, host configuration,
+  prompt contents, credentials and session identifiers are not release assets.
+- A prepared one-shot Windows PowerShell pilot and offline validator. No
+  Windows computer is installed/enrolled or counted as healthy by this release.
+- JavaScript model/release checks in CI alongside Python 3.9/3.13 tests,
+  collector self-tests and secret scanning.
+
+### Fixed
+
+- Storage used/free/total shares one capacity basis; raw APFS filesystem-used
+  stays in Details rather than being added to available bytes.
+- Missing or malformed hosts, samples, token payloads and timestamps remain
+  unverified instead of reporting healthy or zero. Backup-running state
+  stays separate from the last completed backup.
+- Token result chronology handles whole-second and fractional timestamps
+  consistently. The Windows validator accepts the native seven-digit .NET
+  fractional timestamp without inventing missing metrics.
+- Public pilot guidance uses generic host references instead of internal
+  machine inventory or a specific operator's home directory.
+
+### Coverage and upgrade notes
+
+- These are recorded counters on the computer running the publisher, not
+  fleet-wide usage, Codex desktop usage, daily allocations or provider invoices.
+  No costs or combined input/cache totals are inferred.
+- Refresh open browser tabs to load the released viewer. No collector,
+  sampler or endpoint restart is required. Keep dashboards loopback/tailnet
+  private; do not publish telemetry files or widen a listener for this update.
+
 ## [0.6.0] - 2026-10-11
 
 ### Added
