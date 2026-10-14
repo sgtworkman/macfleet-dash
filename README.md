@@ -6,9 +6,9 @@
 sparkDash-style health dashboard for a fleet of Macs — Apple Silicon + Intel,
 macOS + Linux, zero sudo, zero dependencies.
 
-**Viewer release v0.8.0.** The health collector and probe remain v0.6.0;
+**Viewer release v0.9.0.** The health collector and probe remain v0.6.0;
 their existing protocol and running services are unchanged. See the
-[change log](CHANGELOG.md) and [release notes](https://github.com/sgtworkman/macfleet-dash/releases/tag/v0.8.0).
+[change log](CHANGELOG.md) and [release notes](https://github.com/sgtworkman/macfleet-dash/releases/tag/v0.9.0).
 
 The screenshots below are synthetic examples from the earlier viewer.
 Versions 0.7.0+ use resource bars and hourly history instead of overview CPU lines.
@@ -181,6 +181,23 @@ rather than false spikes. Sensor temperature and power draw need sudo
 
 ## Fleet groups and Windows monitoring · v0.8.0
 
+### Private range telemetry · v0.9.0
+
+CCW/classroom, POS and 4473 use filters intersect location and OS/role views.
+The optional ingest-only Tailscale receiver accepts bounded native Windows
+health samples from exact, independently identity-checked peers. It serves no
+dashboard or read route and does not use a shared API key. Its private output
+is separate from the existing WinRM publisher; a single validated viewer merge
+replaces a matching pending entry, rejects conflicting publishers/native names,
+and counts each verified computer once. A pilot reading is visible but excluded
+from automatic-monitoring and resource totals until scheduled operation is verified.
+
+The sender/installer are supplied for a separately approved deployment. Nothing
+in this release automatically enrolls a VPN peer, changes access policy, adjusts
+PowerShell execution policy, opens a remote-control port or reboots a computer.
+4473 and POS health collection never reads customer records or checkout data.
+See the [private connection guide](windows/README.md#private-tailnet-push--v090).
+
 All computers, Mac/Linux, Windows, Servers and Range computers are filtered views
 of one unique host registry. A computer can appear in its OS and role views
 without being counted twice. Location filters intersect each group. Not-enrolled
@@ -200,7 +217,8 @@ The original Windows timestamp is retained separately; a clock discrepancy over
 Every fixed drive is shown and checked separately. Network adapter counters and
 rates are never summed; a rate needs two successful readings of that adapter.
 
-Private `windows-fleet.json`, `viewer/windows.json` and `viewer/fleet-registry.json`
+Private `windows-fleet.json`, `tailnet-fleet.json`, `viewer/windows.json`,
+`viewer/tailnet-windows.json` and `viewer/fleet-registry.json`
 are gitignored. Supply your own confirmed inventory/access before claiming
 range coverage. Interactive remote-control access does not prove automatic
 monitoring. Explicit per-host expected-hours policies can suppress off-hours

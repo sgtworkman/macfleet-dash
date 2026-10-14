@@ -3,6 +3,8 @@ state/
 viewer/data.json
 viewer/token-usage.json
 viewer/windows.json
+viewer/tailnet-windows.json
+tailnet-fleet.json
 viewer/fleet-registry.json
 windows-fleet.json
 .windows-fleet-*

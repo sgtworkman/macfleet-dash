@@ -18,7 +18,7 @@ test('viewer version, static assets, changelog and guide link share a release id
 
 test('public source excludes runtime records and operator-specific pilot inventory',()=>{
   const ignored=read('.gitignore').split(/\r?\n/);
-  for(const path of ['state/','viewer/data.json','viewer/token-usage.json','viewer/windows.json','viewer/fleet-registry.json','windows-fleet.json','macfleet.toml','macfleet.json']) assert.ok(ignored.includes(path),path);
+  for(const path of ['state/','viewer/data.json','viewer/token-usage.json','viewer/windows.json','viewer/tailnet-windows.json','tailnet-fleet.json','viewer/fleet-registry.json','windows-fleet.json','macfleet.toml','macfleet.json']) assert.ok(ignored.includes(path),path);
   for(const path of ['viewer/fleet-app.mjs','windows/README.md']){
     const text=read(path);
     assert.doesNotMatch(text,/\/Users\/|RANGE42S1|WFTRAININGSERVE|WFTrainingServer/);
@@ -30,5 +30,5 @@ test('public source excludes runtime records and operator-specific pilot invento
 // checks their file inventory. Never treat an absent Git index as proof.
 test('Git checkout does not track private runtime records',{skip:!existsSync(new URL('../.git',import.meta.url))},()=>{
   const tracked=execFileSync('git',['ls-files'],{cwd:new URL('..',import.meta.url),encoding:'utf8'}).trim().split('\n');
-  assert.deepEqual(tracked.filter(path=>/^state\/|^viewer\/(?:data|token-usage|windows|fleet-registry)\.json$|^windows-fleet\.json$|^macfleet\.(?:toml|json)$/.test(path)),[]);
+  assert.deepEqual(tracked.filter(path=>/^state\/|^viewer\/(?:data|token-usage|windows|tailnet-windows|fleet-registry)\.json$|^(?:windows|tailnet)-fleet\.json$|^macfleet\.(?:toml|json)$/.test(path)),[]);
 });

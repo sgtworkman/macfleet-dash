@@ -1,4 +1,4 @@
-export const VIEWER_VERSION = '0.8.0';
+export const VIEWER_VERSION = '0.9.0';
 export const STALE_MS = 10 * 60 * 1000;
 export const number = value => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
 export const percent = value => number(value) !== null && value <= 100 ? value : null;
@@ -10,6 +10,7 @@ export function ageMs(at, now = Date.now()) {
 }
 export function freshness(row, now = Date.now()) {
   if (row?.enrollment === 'not-enrolled') return {state:'not-enrolled',label:'Not enrolled',tone:'muted'};
+  if (row?.enrollment === 'pilot') return {state:'pilot',label:'Pilot · not automatic',tone:'warn'};
   if(row?.status!=='available'&&row?.source==='windows-winrm'&&row?.probeErrno?.includes(65))return {state:'client-unavailable',label:'Client LAN unavailable',tone:'warn'};
   if (row?.status !== 'available') return {state:'unavailable',label:'No answer',tone:'bad'};
   const age = ageMs(row.observedAt, now);
@@ -17,34 +18,60 @@ export function freshness(row, now = Date.now()) {
   return age > STALE_MS ? {state:'stale',label:'Data stale',tone:'warn'} : {state:'current',label:row.clockState==='skewed'?'Responding · clock warning':row.sampleState==='partial'?'Responding · partial readings':row.sampleState==='unavailable'?'Responding · readings unavailable':'Responding',tone:row.clockState==='skewed'||['partial','unavailable'].includes(row.sampleState)?'warn':'good'};
 }
 export const FLEET_GROUPS = [{id:'all',label:'All computers'},{id:'mac-linux',label:'Mac / Linux'},{id:'windows',label:'Windows'},{id:'servers',label:'Servers'},{id:'range',label:'Range computers'}];
+export const PURPOSES = [{id:'all',label:'All uses'},{id:'ccw',label:'CCW / classroom'},{id:'pos',label:'POS'},{id:'4473',label:'4473'},{id:'other',label:'Other / unassigned'}];
 export function platform(row) {
-  if (row?.platform==='windows') return 'windows';
+  if (['windows','mac','linux'].includes(row?.platform)) return row.platform;
   if (/^macOS/i.test(row?.os||'')) return 'mac';
   if (/linux/i.test(row?.os||'')) return 'linux';
   return 'unknown';
 }
 export function validWindowsPayload(value) {
   return value?.schema==='macfleet.windows.v1' && Array.isArray(value.hosts)
-    && value.hosts.every(r=>r && typeof r.host==='string' && r.host.length>0 && ['windows','unknown'].includes(r.platform) && ['enrolled','not-enrolled'].includes(r.enrollment) && ['available','unavailable','not-enrolled'].includes(r.status) && (r.enrollment!=='not-enrolled'||r.status==='not-enrolled') && (r.enrollment!=='enrolled'||r.platform==='windows'))
+    && value.hosts.every(r=>r && typeof r.host==='string' && r.host.length>0 && ['windows','unknown'].includes(r.platform) && ['enrolled','pilot','not-enrolled'].includes(r.enrollment) && ['available','unavailable','not-enrolled'].includes(r.status) && (r.enrollment!=='not-enrolled'||r.status==='not-enrolled') && (!['enrolled','pilot'].includes(r.enrollment)||r.platform==='windows'))
     && new Set(value.hosts.map(r=>r.host)).size===value.hosts.length
-    && (()=>{const names=value.hosts.filter(r=>r.enrollment==='enrolled'&&typeof r.hostname==='string').map(r=>r.hostname.toLocaleLowerCase());return new Set(names).size===names.length;})();
+    && (()=>{const names=value.hosts.filter(r=>['enrolled','pilot'].includes(r.enrollment)&&typeof r.hostname==='string').map(r=>r.hostname.toLocaleLowerCase());return new Set(names).size===names.length;})();
 }
-export function combineFleet(base,windows=null,registry=null) {
-  if (!base&&!windows) return null;
+export function mergeWindowsSources(windows,tailnet) {
+  if(windows&&!validWindowsPayload(windows)||tailnet&&!validWindowsPayload(tailnet))throw Error('Fleet source schema unverified');
+  if(!tailnet)return windows;
+  const rows=new Map((windows?.hosts||[]).map(r=>[r.host,r]));
+  for(const row of tailnet.hosts) {
+    if(row.source!=='windows-tailnet'||!['enrolled','pilot'].includes(row.enrollment)||!row.hostname)throw Error('Private telemetry identity unverified');
+    const pending=rows.get(row.host);
+    if(pending&&(pending.enrollment!=='not-enrolled'||pending.hostname&&pending.hostname.toLocaleLowerCase()!==row.hostname.toLocaleLowerCase()))throw Error('Conflicting telemetry owners or native identity');
+    rows.set(row.host,{...pending,...row});
+  }
+  const result={schema:'macfleet.windows.v1',hosts:[...rows.values()],history:{hosts:{...windows?.history?.hosts,...tailnet.history?.hosts},week:{...windows?.history?.week,...tailnet.history?.week}}};
+  if(!validWindowsPayload(result))throw Error('Duplicate physical computer across telemetry sources');
+  const names=new Set(result.hosts.filter(r=>['enrolled','pilot'].includes(r.enrollment)).map(r=>r.hostname?.toLocaleLowerCase()).filter(Boolean));
+  if(result.hosts.some(r=>r.enrollment==='not-enrolled'&&r.hostname&&names.has(r.hostname.toLocaleLowerCase())))throw Error('Pending alias conflicts with a verified native computer');
+  return result;
+}
+export function combineFleet(base,windows=null,registry=null,tailnet=null) {
+  windows=mergeWindowsSources(windows,tailnet);
+  if (!base&&!windows&&!registry?.pendingHosts?.length) return null;
   if (base&&!validPayload(base) || windows&&!validWindowsPayload(windows)) throw Error('Fleet source schema unverified');
   const seed=base||{app:'macfleet-dash',schema:1,hosts:[],history:{},version:null,observedAt:null};
   const metadata=registry?.schema==='macfleet.registry.v1'&&registry.hosts&&typeof registry.hosts==='object'?registry.hosts:{};
-  const hosts=seed.hosts.map(r=>({...r,kind:metadata[r.host]?.kind||'computer',site:metadata[r.host]?.site||'Unassigned'}));
+  const hosts=seed.hosts.map(r=>({...r,kind:metadata[r.host]?.kind||'computer',site:metadata[r.host]?.site||'Unassigned',purpose:metadata[r.host]?.purpose||'other'}));
   for(const row of windows?.hosts||[]) {
     if(hosts.some(r=>r.host===row.host)) throw Error('Duplicate host identity across sources');
-    hosts.push({...row,site:row.site||'Unassigned'});
+    hosts.push({...row,site:row.site||'Unassigned',purpose:row.purpose||metadata[row.host]?.purpose||'other',inventoryOs:metadata[row.host]?.inventoryOs,identityVerifiedOn:metadata[row.host]?.identityVerifiedOn});
+  }
+  const pending=registry?.schema==='macfleet.registry.v1'?registry.pendingHosts||[]:[];
+  if(!Array.isArray(pending)||new Set(pending.map(r=>r?.host)).size!==pending.length)throw Error('Pending inventory identities unverified');
+  for(const row of pending) {
+    if(!row||typeof row.host!=='string'||!(/^[a-z0-9][a-z0-9.-]{0,62}$/).test(row.host)||!['computer','server','range'].includes(row.kind)||!['mac','linux','windows','unknown'].includes(row.platform)||typeof row.pendingReason!=='string'||row.hostname!=null&&(typeof row.hostname!=='string'||!(/^[A-Za-z0-9][A-Za-z0-9.-]{0,62}$/).test(row.hostname)))throw Error('Pending inventory row unverified');
+    const existing=hosts.find(r=>r.host===row.host);
+    if(existing){if(row.hostname&&existing.hostname&&row.hostname.toLocaleLowerCase()!==existing.hostname.toLocaleLowerCase())throw Error('Pending inventory/native identity conflict');continue;}
+    hosts.push({host:row.host,name:row.name||row.host,hostname:row.hostname,kind:row.kind,site:row.site||'Unassigned',purpose:row.purpose||'other',platform:row.platform,source:'registry',enrollment:'not-enrolled',status:'not-enrolled',observedAt:null,pendingReason:row.pendingReason,inventoryOs:row.inventoryOs,identityVerifiedOn:row.identityVerifiedOn});
   }
   const history={hosts:{...seed.history?.hosts,...windows?.history?.hosts},week:{...seed.history?.week,...windows?.history?.week}};
   return {...seed,hosts,history};
 }
-export function filterFleet(hosts,group='all',site='all') {
-  if(!FLEET_GROUPS.some(g=>g.id===group)) return [];
-  return hosts.filter(r=>(site==='all'||(r.site||'Unassigned')===site) && (group==='all'||group==='mac-linux'&&['mac','linux'].includes(platform(r))||group==='windows'&&platform(r)==='windows'||group==='servers'&&r.kind==='server'||group==='range'&&r.kind==='range'));
+export function filterFleet(hosts,group='all',site='all',purpose='all') {
+  if(!FLEET_GROUPS.some(g=>g.id===group)||!PURPOSES.some(p=>p.id===purpose)) return [];
+  return hosts.filter(r=>(purpose==='all'||(r.purpose||'other')===purpose)&&(site==='all'||(r.site||'Unassigned')===site) && (group==='all'||group==='mac-linux'&&['mac','linux'].includes(platform(r))||group==='windows'&&platform(r)==='windows'||group==='servers'&&r.kind==='server'||group==='range'&&r.kind==='range'));
 }
 export function operatingExpectation(row,at=new Date()) {
   const hours=row?.expectedHours;
@@ -94,7 +121,7 @@ export function validTokenPayload(data) {
   return true;
 }
 export function fleetSummary(hosts, now = Date.now()) {
-  const enrolled=hosts.filter(row=>row.enrollment!=='not-enrolled'),current = enrolled.filter(row=>freshness(row,now).state === 'current');
+  const enrolled=hosts.filter(row=>!['not-enrolled','pilot'].includes(row.enrollment)),current = enrolled.filter(row=>freshness(row,now).state === 'current');
   const mem = current.map(memory).filter(Boolean), disks = current.map(storage).filter(Boolean);
   const sum = (rows,key) => rows.length ? rows.reduce((n,row)=>n+row[key],0) : null;
   return {monitored:enrolled.length,pending:hosts.length-enrolled.length,registered:hosts.length,responding:current.length,memUsed:sum(mem,'used'),memTotal:sum(mem,'total'),memKnown:mem.length,
@@ -102,12 +129,12 @@ export function fleetSummary(hosts, now = Date.now()) {
 }
 export function hostAlerts(row, now = Date.now()) {
   const state = freshness(row,now);
-  if(state.state==='not-enrolled')return [];
+  if(['not-enrolled','pilot'].includes(state.state))return [];
   if(operatingExpectation(row,new Date(now))===false && state.state!=='current')return [];
   if(state.state==='client-unavailable')return [{host:row.host,name:row.name||row.host,text:'The scheduled client cannot reach the LAN. Windows availability is unverified, not confirmed offline.'}];
   if (state.state !== 'current') return [{host:row.host,name:row.name||row.host,text:state.state === 'unavailable' ? 'Probe did not answer. Readings unavailable.' : state.label + '. Last sample is not current.'}];
   const result = [], disk = storage(row), mem = memory(row);
-  if(row.clockState==='skewed') result.push({host:row.host,name:row.name||row.host,text:`Windows clock differs by ${format(Math.abs(row.clockSkewSeconds)/60)} min. Freshness uses the authenticated poll receipt.`});
+  if(row.clockState==='skewed') result.push({host:row.host,name:row.name||row.host,text:`Windows clock differs by ${format(Math.abs(row.clockSkewSeconds)/60)} min. Freshness uses the authenticated receipt.`});
   if(row.sampleState==='partial') result.push({host:row.host,name:row.name||row.host,text:'Some Windows readings are unavailable. No missing counter is treated as zero.'});
   if(row.sampleState==='unavailable') result.push({host:row.host,name:row.name||row.host,text:'Windows answered, but resource readings are unavailable. This is not a healthy resource report.'});
   if(Array.isArray(row.disks)) {

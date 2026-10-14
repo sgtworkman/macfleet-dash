@@ -1,5 +1,22 @@
 # macfleet-dash change log
 
+## [0.9.0] - 2026-10-14
+
+Prepared 2026-10-14 21:20 UTC · Codex
+
+- Add intersecting CCW/classroom, POS and 4473 use/location filters.
+- Add an optional ingest-only, stable-device-pinned private Tailscale receiver
+  and reviewed native Windows sender/installer. No shared secret, public
+  listener, remote-control port, policy bypass or automatic VPN enrollment.
+- Keep incoming samples separate from the existing WinRM publisher, with a
+  unique-identity merge that replaces pending records and rejects conflicts.
+- Show actual pilot readings without counting them as automatic monitoring;
+  stale/replayed or rejected samples do not refresh last-seen.
+- Preserve all fixed-drive arithmetic, per-adapter counters, source-clock
+  warnings and unknown values. No customer, checkout or 4473 records collected.
+- Deployment/security approval, natural scheduled updates and startup outcome
+  remain per-host operational verification, not claims of this source release.
+
 ## [0.8.0] - 2026-10-14
 
 ### Added

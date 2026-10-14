@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {combineFleet,filterFleet,fleetSummary,freshness,validWindowsPayload,hostAlerts,operatingExpectation} from '../viewer/fleet-model.mjs';
+import {combineFleet,filterFleet,fleetSummary,freshness,validWindowsPayload,hostAlerts,operatingExpectation,mergeWindowsSources} from '../viewer/fleet-model.mjs';
 const now=Date.parse('2026-10-14T18:00:00Z');
 const at=new Date(now).toISOString();
 const mac={app:'macfleet-dash',schema:1,hosts:[{host:'fixture-mac',os:'macOS',status:'available',observedAt:at,ramGb:16,memUsedGb:8,diskTotalGb:100,diskFreeGb:50}],history:{hosts:{},week:{}}};
@@ -53,4 +53,41 @@ test('an answering host without resource readings is not labelled healthy',()=>{
   const row={...server,clockState:'verified',sampleState:'unavailable'};
   assert.equal(freshness(row,now).tone,'warn');assert.match(freshness(row,now).label,/readings unavailable/);
   assert.ok(hostAlerts(row,now).some(a=>a.text.includes('not a healthy')));
+});
+test('CCW, POS and 4473 filters intersect OS/location and All restores the same population',()=>{
+  const rows=[{...pending,purpose:'ccw'},{...pending,host:'pos',purpose:'pos'},{...pending,host:'forms',site:'Norton',purpose:'4473'}];
+  assert.equal(filterFleet(rows,'range','Brunswick','pos').length,1);
+  assert.equal(filterFleet(rows,'range','Brunswick','4473').length,0);
+  assert.equal(filterFleet(rows,'all','Norton','4473').length,1);
+  assert.equal(filterFleet(rows,'all','all','all').length,3);
+  assert.deepEqual(filterFleet(rows,'all','all','guessed'),[]);
+});
+test('a pinned push replaces its pending entry without changing counts or erasing WinRM rows',()=>{
+  const row={...pending,hostname:'FIXTURE-CLASSROOM',enrollment:'enrolled',status:'available',observedAt:at,source:'windows-tailnet'};
+  const tailnet={schema:win.schema,hosts:[row],history:{hosts:{[row.host]:[[at,2]]},week:{}}};
+  const result=combineFleet(mac,win,null,tailnet);
+  assert.equal(result.hosts.length,3);assert.equal(fleetSummary(result.hosts,now).pending,0);
+  assert.equal(result.hosts.find(h=>h.host===pending.host).source,'windows-tailnet');
+  assert.equal(result.hosts.find(h=>h.host===server.host).status,'available');
+  assert.equal(result.history.hosts[row.host].length,1);
+  assert.throws(()=>mergeWindowsSources({...win,hosts:[server,{...pending,enrollment:'enrolled',status:'available'}]},tailnet),/owners/);
+  assert.throws(()=>mergeWindowsSources({...win,hosts:[server,{...pending,hostname:'WRONG-PC'}]},tailnet),/identity/);
+});
+test('a pilot shows actual readings but never counts as automatic or healthy coverage',()=>{
+  const pilot={...server,source:'windows-tailnet',hostname:'FIXTURE-PC',enrollment:'pilot'};
+  assert.ok(validWindowsPayload({...win,hosts:[pilot]}));
+  assert.equal(freshness(pilot,now).state,'pilot');assert.deepEqual(hostAlerts(pilot,now),[]);
+  const sum=fleetSummary([pilot],now);assert.equal(sum.monitored,0);assert.equal(sum.pending,1);assert.equal(sum.responding,0);assert.equal(sum.memUsed,null);
+});
+test('staged collector hosts stay pending and disappear as duplicates when the real source arrives',()=>{
+  const draft={host:'fixture-pending-linux',hostname:'fixture-linux',kind:'server',platform:'linux',name:'Pending server',pendingReason:'Collector reload pending',cpuUsedPct:99};
+  const registry={schema:'macfleet.registry.v1',hosts:{},pendingHosts:[draft]};
+  const data=combineFleet(mac,win,registry);
+  assert.equal(data.hosts.length,4);const row=data.hosts.find(h=>h.host===draft.host);
+  assert.equal(row.status,'not-enrolled');assert.equal(row.cpuUsedPct,undefined);assert.equal(fleetSummary([row],now).monitored,0);
+  assert.equal(filterFleet([row],'mac-linux').length,1);assert.equal(filterFleet([row],'servers').length,1);assert.equal(filterFleet([row],'windows').length,0);
+  const fresh={...mac,hosts:[...mac.hosts,{host:draft.host,hostname:draft.hostname,os:'Linux',status:'available',observedAt:at}]};
+  assert.equal(combineFleet(fresh,win,registry).hosts.length,4);
+  assert.equal(combineFleet(fresh,win,registry).hosts.find(h=>h.host===draft.host).status,'available');
+  assert.throws(()=>combineFleet(mac,win,{...registry,pendingHosts:[draft,draft]}),/identities/);
 });

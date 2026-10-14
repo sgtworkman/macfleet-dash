@@ -1,6 +1,99 @@
 # Windows monitoring — private bridge and local pilot
 
-Bridge version 0.1.0 · viewer release v0.8.0 · 2026-10-14.
+Bridge/receiver/sender version 0.1.0 · viewer release v0.9.0 · 2026-10-14.
+
+## Private Tailnet push · v0.9.0
+
+`collector/tailnet_receiver.py` is an optional, ingest-only receiver. It binds
+one exact verified local Tailscale IPv4 address in `100.64.0.0/10`, on a dedicated
+unprivileged port other than the viewer's 8791. It refuses public, wildcard,
+ordinary LAN and loopback addresses. The selected local `tailscale whois --json`
+must verify the collector stable ID before startup. Each POST must come directly
+from an allowlisted address AND its currently authenticated stable node ID.
+Proxy/forwarded headers are never identity. No account data, API keys or
+credentials are published. Plain HTTP exists only inside the encrypted tailnet.
+No public exposure/Funnel, subnet routes or exit nodes are enabled by this code.
+If the local Tailscale CLI cannot answer from a background job, optional
+`--identity-via AN_EXISTING_TRUSTED_SSH_ALIAS` performs only the same bounded
+`whois` read through that existing management connection. SSH host-key checking
+and BatchMode remain required; it creates no key, account or access permission.
+The existing lookup host must be on the same tailnet and be trusted to supply
+identity evidence. Test that route in its actual scheduled context too.
+
+Use an owner-only, private `tailnet-fleet.json` with schema
+`macfleet.tailnet.config.v1`, `bindAddress`, integer `port`, `collectorNodeId`,
+and `hosts`. Each confirmed host needs unique `id`, exact `expectedComputerName`,
+`nodeId`, `address`, `kind` (`range`, `server`, `computer`), `site`, optional
+`purpose` (`ccw`, `pos`, `4473`, `other`) and an exact `services` allowlist.
+`automaticVerified` defaults false: accepted readings are pilots, not automatic
+coverage. Set true only after native task readback and a naturally scheduled
+delivery are independently verified. Configuration is reread on requests;
+listener address/port/identity changes require an explicit restart. Removing a
+peer stops acceptance; revoke its policy grant as part of offboarding too.
+
+```sh
+python3 collector/tailnet_receiver.py --config /private/tailnet-fleet.json
+```
+
+It owns only `viewer/tailnet-windows.json`, with atomic mode-0600 publication and
+one non-overlapping receiver lock. The original WinRM publisher still owns
+`windows.json`. The viewer performs the unique-identity merge, so a later WinRM
+run cannot overwrite a confirmed range reading with its old pending row.
+GET/read routes do not exist; oversized/malformed samples, replayed source
+timestamps, unapproved services, wrong native names and peer mismatches are
+rejected without advancing last-seen. Extra payload fields are discarded.
+History and counters retain their actual receipt timestamps. Clock warnings are
+visible; a failed or stale sender never becomes a new healthy sample.
+
+Review the current tailnet policy before deployment. Narrow grants do not
+override an existing wildcard allow-all rule: matching grants are combined.
+Preserve established management and Mac/Linux flows while limiting range
+senders to the exact collector/port. Keep a checked policy rollback; validate
+positive and negative rules before saving. Peer inventory alone is not proof
+of restricted network access or telemetry.
+
+### Windows sender and installation
+
+`send-fleet.ps1` reads a protected sender JSON file with schema
+`macfleet.windows.sender.v1`, `hostId`, `expectedComputerName`, `nodeId`,
+`receiverAddress`, `receiverNodeId`, integer `port` and `services` (array).
+It checks the local and destination Tailscale stable identities, invokes the
+unchanged local collector, and posts only that native payload. No proxy,
+redirect, password, remote listener or certificate-validation bypass is used.
+
+Stage the three reviewed `.ps1` files and that computer's exact private config
+through existing approved access. Inspect native identity, execution policy,
+existing task/directory ownership and active work first. Obtain the required
+action-time approval for persistent access/security changes. The installer
+does not alter execution policy or evade a blocked script. If policy blocks
+deployment, stop that step and resolve the policy with its authorized owner;
+do not add Bypass, an encoded-script workaround or automatic elevation.
+
+```powershell
+.\send-fleet.ps1 -ConfigPath 'C:\APPROVED-STAGING\sender.json'
+.\install-sender.ps1 -ConfigPath 'C:\APPROVED-STAGING\sender.json'
+```
+
+The installer requires an already approved administrator context. It first
+requires a real accepted pilot, then refuses an existing owned task/directory,
+and creates a SYSTEM task named `Workman MacFleet Telemetry`, repeating every
+five minutes and at startup. Files under ProgramData are restricted to SYSTEM
+and local administrators; no passwords are saved. Task overlap is ignored and
+execution is bounded to two minutes. A saved task is not natural-operation or
+reboot proof. Check its actual later delivery, task result and startup settings;
+do not reboot a working POS/classroom solely for verification.
+
+Rollback: disable/remove only the owned telemetry task, stop only the owned
+receiver, revoke only its approved grants and recoverably retain the installed
+files/config and samples. Restore any explicitly changed script policy to its
+recorded prior scope/value. Preserve unrelated jobs, tailnet nodes, recovery
+VM isolation, checkout, printers and existing management access. Offline or
+unidentified records stay pending; never wake a computer or manufacture data
+just to improve the coverage count.
+
+Deployment is operator-specific. These scripts are packaged, not installed by
+publishing a GitHub release. The guide makes no claim that all range machines
+are enrolled or that any particular customer's network has been changed.
 
 ## Existing private WinRM connection
 
