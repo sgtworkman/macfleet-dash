@@ -1,0 +1,9 @@
+{
+  "schema": "macfleet.locations.v1",
+  "locations": {
+    "localhost": "Home",
+    "mini1": "Office",
+    "macstudio": "Home",
+    "mbp2013": "Home"
+  }
+}

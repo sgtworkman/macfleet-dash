@@ -6,9 +6,9 @@
 sparkDash-style health dashboard for a fleet of Macs — Apple Silicon + Intel,
 macOS + Linux, zero sudo, zero dependencies.
 
-**Viewer release v0.9.1.** The health collector and probe remain v0.6.0;
+**Viewer release v0.9.2.** The health collector and probe remain v0.6.0;
 their existing protocol and running services are unchanged. See the
-[change log](CHANGELOG.md) and [release notes](https://github.com/sgtworkman/macfleet-dash/releases/tag/v0.9.1).
+[change log](CHANGELOG.md) and [release notes](https://github.com/sgtworkman/macfleet-dash/releases/tag/v0.9.2).
 
 The screenshots below are synthetic examples from the earlier viewer.
 Versions 0.7.0+ use resource bars and hourly history instead of overview CPU lines.
@@ -125,6 +125,44 @@ Collector flags: `--live` (probe now — nothing is probed without it),
 (override with `--state` or `MACFLEET_STATE`); the viewer reads
 `viewer/data.json`, rewritten atomically every cycle. 288 cycles (24 h at a
 5-minute cadence) of per-host history are kept, plus bounded 7-day history.
+
+## Locations
+
+Open **Locations** in the sidebar or the command palette to assign your own
+location names to Mac, Linux, Windows and pending inventory entries. Labels
+can be Home, Office, a store name, or another name you choose; no IP address
+is used to guess a physical location. Blank means Unassigned.
+
+- **Save in this browser** stores overrides in this browser's local storage.
+  They survive a page reload but do not change another browser or the server.
+  Storage failures are shown as errors, never as successful saves.
+- **Download shared config** downloads `fleet-locations.json`. On the computer
+  hosting your installation, apply it from the MacFleet folder:
+
+  ```sh
+  python3 collector/configure_locations.py --import /path/to/fleet-locations.json
+  ```
+
+  Replace the path with the downloaded file. The command updates only location
+  fields in private `viewer/fleet-registry.json`, preserves existing metadata
+  and pending inventory, and backs up the previous file under private
+  `state/location-backups/`. Refresh the viewer; no service restart is required.
+  Browser overrides take precedence until **Reset browser overrides** is used.
+
+You can also assign shared locations directly, including before a new host is
+connected. The IDs are the keys you chose in `macfleet.toml` or your Windows
+configuration, not a guessed hostname:
+
+```sh
+python3 collector/configure_locations.py --set localhost Home --set mini1 Office
+```
+
+[`fleet-locations.example.json`](fleet-locations.example.json) is a generic
+template. Exported settings contain computer IDs and labels only. Keep your
+own settings and registry private; no real inventory is included in the release.
+To undo a shared change, restore the exact previous registry from the backup
+path printed by the command, then refresh. No telemetry, identity, enrollment,
+credentials, network policy or collector configuration is changed.
 
 ## Security model
 

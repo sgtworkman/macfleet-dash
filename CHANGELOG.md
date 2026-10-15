@@ -1,5 +1,23 @@
 # macfleet-dash change log
 
+## [0.9.2] - 2026-10-15
+
+Prepared 2026-10-15 · Codex
+
+- Add a Locations screen with editable per-computer labels, browser-persistent
+  overrides, explicit save scope, reset and a small shared-settings download.
+- Add a standard-library command to apply shared locations with an exact
+  private registry backup, atomic writes and concurrent-change preservation.
+- Apply shared labels consistently to Mac, Linux, Windows and pending entries;
+  keep source locations when no override is configured. Labels do not alter
+  telemetry, source identities, enrollment, freshness or resource arithmetic.
+- Include a generic configuration example and self-service setup instructions
+  in the public release. No real machine inventory or private labels shipped.
+- Preserve unsaved edits through automatic data refresh, disclose browser
+  storage failures and validate host IDs and location text before saving.
+- Viewer-only update: health collector/probe stay v0.6.0; no service restart,
+  new writable network endpoint, VPN enrollment or access change is required.
+
 ## [0.9.1] - 2026-10-14
 
 Prepared 2026-10-14 · Codex

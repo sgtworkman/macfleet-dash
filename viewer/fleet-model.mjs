@@ -1,4 +1,5 @@
-export const VIEWER_VERSION = '0.9.1';
+import {locationName} from './fleet-locations.mjs';
+export const VIEWER_VERSION = '0.9.2';
 export const STALE_MS = 10 * 60 * 1000;
 export const number = value => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
 export const percent = value => number(value) !== null && value <= 100 ? value : null;
@@ -53,10 +54,11 @@ export function combineFleet(base,windows=null,registry=null,tailnet=null) {
   if (base&&!validPayload(base) || windows&&!validWindowsPayload(windows)) throw Error('Fleet source schema unverified');
   const seed=base||{app:'macfleet-dash',schema:1,hosts:[],history:{},version:null,observedAt:null};
   const metadata=registry?.schema==='macfleet.registry.v1'&&registry.hosts&&typeof registry.hosts==='object'?registry.hosts:{};
-  const hosts=seed.hosts.map(r=>({...r,kind:metadata[r.host]?.kind||'computer',site:metadata[r.host]?.site||'Unassigned',purpose:metadata[r.host]?.purpose||'other'}));
+  const siteFor=row=>locationName(metadata[row.host]?.site??row.site??'');
+  const hosts=seed.hosts.map(r=>({...r,kind:metadata[r.host]?.kind||'computer',site:siteFor(r),purpose:metadata[r.host]?.purpose||'other'}));
   for(const row of windows?.hosts||[]) {
     if(hosts.some(r=>r.host===row.host)) throw Error('Duplicate host identity across sources');
-    hosts.push({...row,site:row.site||'Unassigned',purpose:row.purpose||metadata[row.host]?.purpose||'other',inventoryOs:metadata[row.host]?.inventoryOs,identityVerifiedOn:metadata[row.host]?.identityVerifiedOn});
+    hosts.push({...row,site:siteFor(row),purpose:row.purpose||metadata[row.host]?.purpose||'other',inventoryOs:metadata[row.host]?.inventoryOs,identityVerifiedOn:metadata[row.host]?.identityVerifiedOn});
   }
   const pending=registry?.schema==='macfleet.registry.v1'?registry.pendingHosts||[]:[];
   if(!Array.isArray(pending)||new Set(pending.map(r=>r?.host)).size!==pending.length)throw Error('Pending inventory identities unverified');
@@ -64,7 +66,7 @@ export function combineFleet(base,windows=null,registry=null,tailnet=null) {
     if(!row||typeof row.host!=='string'||!(/^[a-z0-9][a-z0-9.-]{0,62}$/).test(row.host)||!['computer','server','range'].includes(row.kind)||!['mac','linux','windows','unknown'].includes(row.platform)||typeof row.pendingReason!=='string'||row.hostname!=null&&(typeof row.hostname!=='string'||!(/^[A-Za-z0-9][A-Za-z0-9.-]{0,62}$/).test(row.hostname)))throw Error('Pending inventory row unverified');
     const existing=hosts.find(r=>r.host===row.host);
     if(existing){if(row.hostname&&existing.hostname&&row.hostname.toLocaleLowerCase()!==existing.hostname.toLocaleLowerCase())throw Error('Pending inventory/native identity conflict');continue;}
-    hosts.push({host:row.host,name:row.name||row.host,hostname:row.hostname,kind:row.kind,site:row.site||'Unassigned',purpose:row.purpose||'other',platform:row.platform,source:'registry',enrollment:'not-enrolled',status:'not-enrolled',observedAt:null,pendingReason:row.pendingReason,inventoryOs:row.inventoryOs,identityVerifiedOn:row.identityVerifiedOn});
+    hosts.push({host:row.host,name:row.name||row.host,hostname:row.hostname,kind:row.kind,site:siteFor(row),purpose:row.purpose||'other',platform:row.platform,source:'registry',enrollment:'not-enrolled',status:'not-enrolled',observedAt:null,pendingReason:row.pendingReason,inventoryOs:row.inventoryOs,identityVerifiedOn:row.identityVerifiedOn});
   }
   const history={hosts:{...seed.history?.hosts,...windows?.history?.hosts},week:{...seed.history?.week,...windows?.history?.week}};
   return {...seed,hosts,history};
