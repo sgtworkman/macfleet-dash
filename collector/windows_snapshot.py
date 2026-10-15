@@ -154,6 +154,18 @@ def atomic_json(output,value):
     finally:
         if temporary is not None and temporary.exists():temporary.unlink()
 
+def verify_loopback_viewer(run=None):
+    """Retry one timed-out OS scan, never an invalid/empty binding result."""
+    run = run or subprocess.run
+    for attempt in range(2):
+        try:
+            listener=run(['/usr/sbin/lsof','-nP','-iTCP:8791','-sTCP:LISTEN','-Fn'],capture_output=True,text=True,timeout=5)
+            break
+        except subprocess.TimeoutExpired:
+            if attempt:raise
+    binds=[line[1:] for line in listener.stdout.splitlines() if line.startswith('n')]
+    if listener.returncode or not binds or any(x not in ('127.0.0.1:8791','[::1]:8791') for x in binds):raise ValueError('Existing loopback viewer binding unverified')
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config',required=True);parser.add_argument('--credentials-file',required=True);parser.add_argument('--output',default=str(ROOT/'viewer/windows.json'))
@@ -167,9 +179,7 @@ def main():
     env=dotenv_values(credentials_path)
     credentials=(env.get('WORKMAN_WINDOWS_SERVER_USERNAME'),env.get('WORKMAN_WINDOWS_SERVER_PASSWORD'))
     if not all(credentials):raise ValueError('Required Windows inventory credentials are unavailable')
-    listener=subprocess.run(['/usr/sbin/lsof','-nP','-iTCP:8791','-sTCP:LISTEN','-Fn'],capture_output=True,text=True,timeout=5)
-    binds=[line[1:] for line in listener.stdout.splitlines() if line.startswith('n')]
-    if listener.returncode or not binds or any(x not in ('127.0.0.1:8791','[::1]:8791') for x in binds):raise ValueError('Existing loopback viewer binding unverified')
+    verify_loopback_viewer()
     output=Path(args.output)
     # This client-side bridge has one publisher, even if a diagnostic command
     # overlaps its scheduled run. The original health collector is unaffected.

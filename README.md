@@ -6,9 +6,9 @@
 sparkDash-style health dashboard for a fleet of Macs — Apple Silicon + Intel,
 macOS + Linux, zero sudo, zero dependencies.
 
-**Viewer release v0.9.0.** The health collector and probe remain v0.6.0;
+**Viewer release v0.9.1.** The health collector and probe remain v0.6.0;
 their existing protocol and running services are unchanged. See the
-[change log](CHANGELOG.md) and [release notes](https://github.com/sgtworkman/macfleet-dash/releases/tag/v0.9.0).
+[change log](CHANGELOG.md) and [release notes](https://github.com/sgtworkman/macfleet-dash/releases/tag/v0.9.1).
 
 The screenshots below are synthetic examples from the earlier viewer.
 Versions 0.7.0+ use resource bars and hourly history instead of overview CPU lines.

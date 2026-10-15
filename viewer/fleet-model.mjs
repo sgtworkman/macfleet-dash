@@ -1,4 +1,4 @@
-export const VIEWER_VERSION = '0.9.0';
+export const VIEWER_VERSION = '0.9.1';
 export const STALE_MS = 10 * 60 * 1000;
 export const number = value => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
 export const percent = value => number(value) !== null && value <= 100 ? value : null;
@@ -92,6 +92,14 @@ export function storage(row) {
   if (total === null || total === 0 || free === null || free > total) return null;
   return {total,free,used:Math.round((total-free)*10)/10,pct:(total-free)/total*100};
 }
+export function driveStorage(drive) {
+  if(drive?.status!=='available'||!(/^[a-z]:$/i).test(drive.drive||''))return null;
+  return storage({diskTotalGb:drive.totalGb,diskFreeGb:drive.freeGb});
+}
+export function lastUpdateAge(row,now=Date.now()) {
+  const age=ageMs(row?.observedAt,now);
+  return age===null?'Time unverified':age<60000?'just now':age<3600000?Math.floor(age/60000)+' min ago':format(age/3600000,1)+' h ago';
+}
 export function memory(row) {
   const total = number(row?.ramGb), used = number(row?.memUsedGb);
   if (total === null || total === 0 || used === null || used > total) return null;
@@ -124,7 +132,7 @@ export function fleetSummary(hosts, now = Date.now()) {
   const enrolled=hosts.filter(row=>!['not-enrolled','pilot'].includes(row.enrollment)),current = enrolled.filter(row=>freshness(row,now).state === 'current');
   const mem = current.map(memory).filter(Boolean), disks = current.map(storage).filter(Boolean);
   const sum = (rows,key) => rows.length ? rows.reduce((n,row)=>n+row[key],0) : null;
-  return {monitored:enrolled.length,pending:hosts.length-enrolled.length,registered:hosts.length,responding:current.length,memUsed:sum(mem,'used'),memTotal:sum(mem,'total'),memKnown:mem.length,
+  return {monitored:enrolled.length,pending:hosts.length-enrolled.length,pilots:hosts.filter(row=>row.enrollment==='pilot').length,notEnrolled:hosts.filter(row=>row.enrollment==='not-enrolled').length,registered:hosts.length,responding:current.length,memUsed:sum(mem,'used'),memTotal:sum(mem,'total'),memKnown:mem.length,
     diskFree:sum(disks,'free'),diskKnown:disks.length};
 }
 export function hostAlerts(row, now = Date.now()) {
@@ -132,13 +140,13 @@ export function hostAlerts(row, now = Date.now()) {
   if(['not-enrolled','pilot'].includes(state.state))return [];
   if(operatingExpectation(row,new Date(now))===false && state.state!=='current')return [];
   if(state.state==='client-unavailable')return [{host:row.host,name:row.name||row.host,text:'The scheduled client cannot reach the LAN. Windows availability is unverified, not confirmed offline.'}];
-  if (state.state !== 'current') return [{host:row.host,name:row.name||row.host,text:state.state === 'unavailable' ? 'Probe did not answer. Readings unavailable.' : state.label + '. Last sample is not current.'}];
+  if (state.state !== 'current') return [{host:row.host,name:row.name||row.host,priority:0,text:state.state === 'unavailable' ? 'Latest probe did not answer. Readings unavailable; last verified update '+lastUpdateAge(row,now)+'. This does not prove the computer is powered off.' : state.state==='stale'?'Missed updates: last verified update '+lastUpdateAge(row,now)+'. Expected about every 5 minutes; readings are not current.':state.label + '. Last sample is not current.'}];
   const result = [], disk = storage(row), mem = memory(row);
-  if(row.clockState==='skewed') result.push({host:row.host,name:row.name||row.host,text:`Windows clock differs by ${format(Math.abs(row.clockSkewSeconds)/60)} min. Freshness uses the authenticated receipt.`});
+  if(row.clockState==='skewed') result.push({host:row.host,name:row.name||row.host,priority:1,text:`Windows clock is ${format(Math.abs(row.clockSkewSeconds)/60)} min ${row.clockSkewSeconds>=0?'ahead of':'behind'} the cockpit. Freshness uses the authenticated receipt.`});
   if(row.sampleState==='partial') result.push({host:row.host,name:row.name||row.host,text:'Some Windows readings are unavailable. No missing counter is treated as zero.'});
   if(row.sampleState==='unavailable') result.push({host:row.host,name:row.name||row.host,text:'Windows answered, but resource readings are unavailable. This is not a healthy resource report.'});
   if(Array.isArray(row.disks)) {
-    for(const drive of row.disks)if(drive.status==='available'&&number(drive.freeGb)!==null&&drive.freeGb<20)result.push({host:row.host,name:row.name||row.host,text:`Low storage ${drive.drive}: ${format(drive.freeGb)} GiB available.`});
+    for(const drive of row.disks){const capacity=driveStorage(drive);if(capacity&&capacity.free<20)result.push({host:row.host,name:row.name||row.host,priority:2,text:`Low storage ${drive.drive} ${format(capacity.free)} GiB available (${format(capacity.pct,0)}% used). Warning below 20 GiB; other drives do not offset this.`});}
   } else if (disk && disk.free < 20) result.push({host:row.host,name:row.name||row.host,text:`Low storage: ${format(disk.free)} GB available (${format(disk.pct,0)}% used).`});
   if (number(row.swapUsedGb) !== null && row.swapUsedGb > 8) result.push({host:row.host,name:row.name||row.host,text:`High swap: ${format(row.swapUsedGb)} GB in use.`});
   if (mem && mem.pct >= 95) result.push({host:row.host,name:row.name||row.host,text:`Memory nearly full: ${format(mem.pct,0)}% used.`});

@@ -1,5 +1,22 @@
 # macfleet-dash change log
 
+## [0.9.1] - 2026-10-14
+
+Prepared 2026-10-14 · Codex
+
+- Put actionable health warnings before computer cards, within the selected
+  location/use filters. Missed updates include the actual last-update age.
+- Show each Windows drive's available capacity directly on its computer card;
+  combined free space cannot hide a low system drive. Correct drive punctuation.
+- Show whether a Windows clock is ahead or behind the receiving cockpit.
+- Separate pilots from inventory without a connection while preserving the
+  exclusion of both from automatic monitoring and resource totals.
+- Replay one timed-out Windows-client OS listener scan without changing its
+  timeout or weakening loopback-only, nonempty binding validation. Invalid
+  binding results are never retried into success.
+- Preserve unknown values and source identity checks. This source release does
+  not assert per-host installation, clock repair, scheduled or startup proof.
+
 ## [0.9.0] - 2026-10-14
 
 Prepared 2026-10-14 21:20 UTC · Codex

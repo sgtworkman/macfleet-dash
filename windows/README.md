@@ -1,6 +1,6 @@
 # Windows monitoring — private bridge and local pilot
 
-Bridge/receiver/sender version 0.1.0 · viewer release v0.9.0 · 2026-10-14.
+Bridge/receiver/sender version 0.1.0 · viewer release v0.9.1 · 2026-10-14.
 
 ## Private Tailnet push · v0.9.0
 
