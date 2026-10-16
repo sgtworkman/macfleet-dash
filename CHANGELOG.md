@@ -1,5 +1,29 @@
 # macfleet-dash change log
 
+## [0.9.3] - 2026-10-15
+
+Prepared 2026-10-15 · Codex
+
+- Replace the no-data loading state with first-computer setup, a local-only
+  starter configuration download and a published-snapshot connection check.
+- Put Workspace before the computer list; add overview shortcuts and a direct
+  Edit location action that focuses the chosen computer's field.
+- Add multi-select location drafts, explicit browser-only save wording and
+  clear shared-setting application instructions. Drafts do not save themselves.
+- Add bounded private browser activity for reading-status changes, important
+  alerts and effective location changes, plus separate timestamped public
+  application notes identifying version and author/agent. Disclose history scope.
+- Check actual public archives for private runtime files and unsafe members;
+  add fresh-install, bulk-assignment and activity regression coverage.
+- Version every transitive browser-module URL, fixing upgrades that could load
+  the new interface but retain an older cached model/version after refresh.
+- Distinguish failed check times from successful readings on cards and alerts;
+  show an unknown last success honestly and expose a safe monitoring failure
+  reason in Mac/Linux details without dumping private endpoint errors.
+- Keep health collector/probe v0.6.0, existing services, access policy and
+  private inventory unchanged. A viewer update does not repair an endpoint,
+  wake an offline computer or claim missing telemetry is healthy.
+
 ## [0.9.2] - 2026-10-15
 
 Prepared 2026-10-15 · Codex

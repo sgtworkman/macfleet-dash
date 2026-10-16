@@ -6,6 +6,8 @@ viewer/windows.json
 viewer/tailnet-windows.json
 tailnet-fleet.json
 viewer/fleet-registry.json
+viewer/activity.json
+fleet-locations.json
 windows-fleet.json
 .windows-fleet-*
 .token-usage-*

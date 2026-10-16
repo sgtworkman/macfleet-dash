@@ -6,9 +6,9 @@
 sparkDash-style health dashboard for a fleet of Macs — Apple Silicon + Intel,
 macOS + Linux, zero sudo, zero dependencies.
 
-**Viewer release v0.9.2.** The health collector and probe remain v0.6.0;
+**Viewer release v0.9.3.** The health collector and probe remain v0.6.0;
 their existing protocol and running services are unchanged. See the
-[change log](CHANGELOG.md) and [release notes](https://github.com/sgtworkman/macfleet-dash/releases/tag/v0.9.2).
+[change log](CHANGELOG.md) and [release notes](https://github.com/sgtworkman/macfleet-dash/releases/tag/v0.9.3).
 
 The screenshots below are synthetic examples from the earlier viewer.
 Versions 0.7.0+ use resource bars and hourly history instead of overview CPU lines.
@@ -47,6 +47,18 @@ macfleet-dash/
 ```
 
 ## Quickstart
+
+New installation? Open **Setup & connections** in the viewer. With no published
+computers, the overview shows this setup screen automatically instead of an
+endless loading message. **Download starter config** creates a configuration
+for only the Mac or Linux computer running the collector. Do not replace an
+existing configuration. The downloaded app has no operator inventory or live
+readings; connect your own authorized computers using the steps below.
+
+**Check connection** re-reads this installation's published snapshots and shows
+valid, missing or invalid sources, responding computers and pending inventory.
+It does not probe a remote computer, install software or establish access.
+An optional Windows/token source can be unconfigured without blocking Mac setup.
 
 **1. Install the probe on each Mac** — copy `probe/fleet-probe.sh` to the host
 (or leave it where the collector can push it). The collector sends the script
@@ -133,7 +145,12 @@ location names to Mac, Linux, Windows and pending inventory entries. Labels
 can be Home, Office, a store name, or another name you choose; no IP address
 is used to guess a physical location. Blank means Unassigned.
 
-- **Save in this browser** stores overrides in this browser's local storage.
+Every computer's details include **Edit location**, which opens and focuses its
+location field. Select several computers and use **Apply to selected** to stage
+a bulk draft; this does not save it. Choose one of the options below afterward.
+Unsaved individual and bulk edits survive a normal data refresh.
+
+- **Save only in this browser** stores overrides in this browser's local storage.
   They survive a page reload but do not change another browser or the server.
   Storage failures are shown as errors, never as successful saves.
 - **Download shared config** downloads `fleet-locations.json`. On the computer
@@ -163,6 +180,44 @@ own settings and registry private; no real inventory is included in the release.
 To undo a shared change, restore the exact previous registry from the backup
 path printed by the command, then refresh. No telemetry, identity, enrollment,
 credentials, network policy or collector configuration is changed.
+
+## Recent activity and application changes
+
+Open **Recent activity** from Workspace, the overview or computer details.
+Connection-reading changes, important alerts and effective location changes
+are observed while this browser is open. The first snapshot establishes a
+baseline: no earlier history is fabricated. Up to 200 events are retained in
+browser-local storage under `macfleet-activity-v1`. No raw health snapshot,
+credential or endpoint is saved in this journal. If storage fails, the screen
+discloses that activity is session-only rather than claiming it persisted.
+
+This is not a complete unattended or cross-browser audit log. Event time is
+when this browser observed the change, not a source computer's clock. Numeric
+metric fluctuations do not repeatedly log the same alert; a stale source never
+becomes proof that the computer is powered off. Source failures remain visible.
+
+**Application changes** separately lists generic versioned changes, their date
+and time, and their author/agent. Source preparation and GitHub publication are
+identified separately; a note is not proof of deployment to another host.
+Private computer activity and inventory are never included in public notes.
+
+## Public release checks
+
+In addition to tests and secret scanning, inspect the actual source archive:
+
+```sh
+python3 collector/check_release.py /path/to/macfleet-dash-v0.9.3.tar.gz
+```
+
+The check rejects runtime snapshots, private configuration, exported location
+settings, local state, archive links/path traversal and incomplete viewer files.
+CI performs this check against a real Git archive, not just `.gitignore`.
+Before release, also open a clean extracted copy without operator settings and
+verify the first-computer setup, connection check, location controls and activity
+on desktop and mobile. Keep test telemetry synthetic and outside public source.
+To roll back a viewer update, restore the prior release's source files while
+preserving all private configuration and runtime state, then refresh browsers.
+No health-collector or receiver restart is required for this viewer update.
 
 ## Security model
 

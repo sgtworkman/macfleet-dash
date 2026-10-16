@@ -20,6 +20,11 @@ jobs:
         run: python -m unittest discover -s tests -p "test_*.py" -v
       - name: Selftest
         run: python collector/macfleet.py --selftest
+      - name: Public source archive privacy
+        run: |
+          release_version=$(sed -n 's/^## \[\([0-9.]*\)\].*/\1/p' CHANGELOG.md | head -n 1)
+          git archive --format=tar.gz --prefix="macfleet-dash-v${release_version}/" HEAD --output="$RUNNER_TEMP/macfleet-source.tar.gz"
+          python collector/check_release.py "$RUNNER_TEMP/macfleet-source.tar.gz"
 
   secrets:
     runs-on: ubuntu-latest

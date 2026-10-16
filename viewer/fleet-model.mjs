@@ -1,5 +1,5 @@
-import {locationName} from './fleet-locations.mjs';
-export const VIEWER_VERSION = '0.9.2';
+import {locationName} from './fleet-locations.mjs?v=0.9.3';
+export const VIEWER_VERSION = '0.9.3';
 export const STALE_MS = 10 * 60 * 1000;
 export const number = value => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
 export const percent = value => number(value) !== null && value <= 100 ? value : null;
@@ -102,6 +102,23 @@ export function lastUpdateAge(row,now=Date.now()) {
   const age=ageMs(row?.observedAt,now);
   return age===null?'Time unverified':age<60000?'just now':age<3600000?Math.floor(age/60000)+' min ago':format(age/3600000,1)+' h ago';
 }
+export function sampleTimes(row){
+  const failed=row?.status!=='available';
+  // Mac/Linux failures stamp the failed attempt in observedAt. Only the
+  // WinRM bridge explicitly retains an authenticated successful receivedAt.
+  return {
+    failed,
+    readingAt:failed?(row?.source==='windows-winrm'?row.receivedAt||null:null):row?.observedAt||null,
+    attemptAt:failed?(row?.lastAttemptAt||(row?.source==='windows-winrm'?null:row?.observedAt)||null):null
+  };
+}
+export function failureReason(row){
+  const detail=String(row?.refreshFailure||row?.probeError||'');
+  if(/connection refused/i.test(detail))return 'Connection refused by the monitoring endpoint';
+  if(/timeout|timed out/i.test(detail))return 'Monitoring connection timed out';
+  if(/permission denied|authentication/i.test(detail))return 'Monitoring access was rejected';
+  return 'The monitoring probe did not answer';
+}
 export function memory(row) {
   const total = number(row?.ramGb), used = number(row?.memUsedGb);
   if (total === null || total === 0 || used === null || used > total) return null;
@@ -142,7 +159,10 @@ export function hostAlerts(row, now = Date.now()) {
   if(['not-enrolled','pilot'].includes(state.state))return [];
   if(operatingExpectation(row,new Date(now))===false && state.state!=='current')return [];
   if(state.state==='client-unavailable')return [{host:row.host,name:row.name||row.host,text:'The scheduled client cannot reach the LAN. Windows availability is unverified, not confirmed offline.'}];
-  if (state.state !== 'current') return [{host:row.host,name:row.name||row.host,priority:0,text:state.state === 'unavailable' ? 'Latest probe did not answer. Readings unavailable; last verified update '+lastUpdateAge(row,now)+'. This does not prove the computer is powered off.' : state.state==='stale'?'Missed updates: last verified update '+lastUpdateAge(row,now)+'. Expected about every 5 minutes; readings are not current.':state.label + '. Last sample is not current.'}];
+  if (state.state !== 'current') {
+    const times=sampleTimes(row),failedMessage='Latest probe did not answer. Readings unavailable. Latest failed check '+lastUpdateAge({observedAt:times.attemptAt},now)+'. '+(times.readingAt?'Last successful reading '+lastUpdateAge({observedAt:times.readingAt},now)+'. ':'Last successful reading is not retained. ')+'This does not prove the computer is powered off.';
+    return [{host:row.host,name:row.name||row.host,priority:0,text:state.state==='unavailable'?failedMessage:state.state==='stale'?'Missed updates: last verified update '+lastUpdateAge(row,now)+'. Expected about every 5 minutes; readings are not current.':state.label+'. Last sample is not current.'}];
+  }
   const result = [], disk = storage(row), mem = memory(row);
   if(row.clockState==='skewed') result.push({host:row.host,name:row.name||row.host,priority:1,text:`Windows clock is ${format(Math.abs(row.clockSkewSeconds)/60)} min ${row.clockSkewSeconds>=0?'ahead of':'behind'} the cockpit. Freshness uses the authenticated receipt.`});
   if(row.sampleState==='partial') result.push({host:row.host,name:row.name||row.host,text:'Some Windows readings are unavailable. No missing counter is treated as zero.'});
