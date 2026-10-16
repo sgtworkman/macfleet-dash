@@ -1,6 +1,6 @@
 // Personal workspace state. Never publish this browser's activity with source.
-import {freshness,hostAlerts} from './fleet-model.mjs?v=0.9.3';
-import {locationName,locationsDocument} from './fleet-locations.mjs?v=0.9.3';
+import {freshness,hostAlerts} from './fleet-model.mjs?v=0.9.4';
+import {locationName,locationsDocument} from './fleet-locations.mjs?v=0.9.4';
 
 export const ACTIVITY_STORAGE_KEY='macfleet-activity-v1';
 export const MAX_ACTIVITY=200;
@@ -53,6 +53,7 @@ export const starterConfig=()=>({interval:300,hosts:{'this-computer':{method:'lo
 
 // Generic application notes only: no operator inventory, IPs or private events.
 export const APP_CHANGES=[
-  {version:'0.9.3',at:'2026-10-16T01:22:49Z',by:'Codex',label:'Source prepared',items:['First-computer setup and snapshot connection check.','Direct location editing, bulk drafts and clearer save scope.','Private browser activity and timestamped application change notes.','Separate failed-check times from successful readings.','Public archive privacy checks and fresh-install regression coverage.']},
+  {version:'0.9.4',at:'2026-10-16T04:22:00Z',by:'Codex',label:'Source prepared',items:['Current model on computer cards and in details, separate from saved roles and benchmark history.','Read-only private llama.cpp identity, artifact, quantization and per-slot context checks through the existing snapshot refresh.','Unavailable, stale, catalog-only and multiple-model results remain explicitly unverified.']},
+  {version:'0.9.3',at:'2026-10-16T03:36:34Z',by:'Codex',label:'GitHub release published',items:['First-computer setup and snapshot connection check.','Direct location editing, bulk drafts and clearer save scope.','Private browser activity and timestamped application change notes.','Separate failed-check times from successful readings.','Public archive privacy checks and fresh-install regression coverage.']},
   {version:'0.9.2',at:'2026-10-15T04:51:17Z',by:'Codex',label:'GitHub release published',items:['Self-service locations with browser-only saves and shared configuration export.']}
 ];

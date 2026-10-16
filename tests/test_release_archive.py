@@ -32,7 +32,7 @@ class ArchivePrivacyTests(unittest.TestCase):
     def test_real_archive_inventory_not_gitignore_is_checked(self):
         with tempfile.TemporaryDirectory() as directory:
             self.assertEqual(release.check_archive(self.make_archive(directory))['files'], len(release.REQUIRED))
-            for private in ['viewer/data.json', 'viewer/windows.json', 'viewer/fleet-registry.json', 'macfleet.toml', 'state/events.json', 'fleet-locations.json', 'viewer/activity.json', '.env.local']:
+            for private in ['viewer/data.json', 'viewer/windows.json', 'viewer/model-status.json', 'viewer/fleet-registry.json', 'macfleet.toml', 'state/events.json', 'fleet-locations.json', 'viewer/activity.json', '.env.local']:
                 with self.subTest(private=private), self.assertRaises(ValueError):
                     release.check_archive(self.make_archive(directory, [('macfleet-dash-v0.9.3/' + private, 'file')]))
 

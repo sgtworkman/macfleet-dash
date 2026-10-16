@@ -2,6 +2,7 @@
 state/
 viewer/data.json
 viewer/token-usage.json
+viewer/model-status.json
 viewer/windows.json
 viewer/tailnet-windows.json
 tailnet-fleet.json

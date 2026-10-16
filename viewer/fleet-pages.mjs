@@ -1,5 +1,5 @@
-import {escapeHtml as esc,fleetSummary,freshness,sampleTimes,VIEWER_VERSION} from './fleet-model.mjs?v=0.9.3';
-import {APP_CHANGES} from './fleet-workspace.mjs?v=0.9.3';
+import {escapeHtml as esc,fleetSummary,freshness,sampleTimes,VIEWER_VERSION} from './fleet-model.mjs?v=0.9.4';
+import {APP_CHANGES} from './fleet-workspace.mjs?v=0.9.4';
 const when=value=>typeof value==='string'&&Number.isFinite(Date.parse(value))?new Date(value).toLocaleString(undefined,{year:'numeric',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZoneName:'short'}):'Time unavailable';
 const hostHref=id=>'#host/'+encodeURIComponent(id);
 

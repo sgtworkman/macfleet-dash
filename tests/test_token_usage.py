@@ -5,10 +5,13 @@ from pathlib import Path
 import sqlite3
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'collector'))
 from token_usage import read_usage, classify
 from publish_token_usage import publish_snapshot
+import publish_token_usage as publisher
 
 NOW = 1791979200
 SCHEMA = '''CREATE TABLE session_model_usage(session_id TEXT,model TEXT,billing_provider TEXT,billing_base_url TEXT,billing_mode TEXT,task TEXT,api_call_count INTEGER,input_tokens INTEGER,output_tokens INTEGER,cache_read_tokens INTEGER,cache_write_tokens INTEGER,reasoning_tokens INTEGER,first_seen REAL,last_seen REAL); CREATE TABLE messages(content TEXT);'''
@@ -87,5 +90,36 @@ class UsageTests(unittest.TestCase):
         self.assertEqual(last,NOW-0.75)
         self.assertEqual(datetime.fromisoformat(d['coverage']['start'].replace('Z','+00:00')).timestamp(),NOW-100)
         self.assertEqual(datetime.fromisoformat(d['coverage']['end'].replace('Z','+00:00')).timestamp(),NOW-0.75)
+
+
+class PublisherTests(unittest.TestCase):
+    def test_existing_loopback_helper_publishes_independent_private_snapshots(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);(root/'viewer').mkdir()
+            usage={'status':'available','observedAt':'2026-10-16T04:30:00Z','groups':[]}
+            models={'schema':'macfleet.models.v1','observedAt':usage['observedAt'],'hosts':[]}
+            config={'hosts':{'demo':{'method':'http','ts_ip':'100.64.0.5','model_url':'http://100.64.0.5:8000/v1/models'}}}
+            result=SimpleNamespace(returncode=0,stdout='p123\nn127.0.0.1:8780\n')
+            with patch.object(publisher,'ROOT',root), patch.object(sys,'argv',['publisher','--viewer-port','8780','--config','fixture.json']), patch.object(publisher.subprocess,'run',return_value=result) as listener, patch('macfleet.load_config',return_value=config) as load, patch.object(publisher,'read_usage',return_value=usage), patch.object(publisher,'read_models',return_value=models) as read, patch('builtins.print'):
+                publisher.main()
+            load.assert_called_once_with('fixture.json')
+            read.assert_called_once_with(config)
+            self.assertIn('-iTCP:8780',listener.call_args.args[0])
+            for name,value in [('token-usage.json',usage),('model-status.json',models)]:
+                output=root/'viewer'/name
+                self.assertEqual(json.loads(output.read_text()),value)
+                self.assertEqual(output.stat().st_mode & 0o777,0o600)
+
+    def test_unverified_or_non_loopback_viewer_stops_before_reads_and_writes(self):
+        for returncode,stdout in [(1,''),(0,''),(0,'n*:8791\n'),(0,'n127.0.0.1:8791\nn100.64.0.5:8791\n')]:
+            with self.subTest(stdout=stdout), patch.object(sys,'argv',['publisher']), patch.object(publisher.subprocess,'run',return_value=SimpleNamespace(returncode=returncode,stdout=stdout)), patch.object(publisher,'read_usage') as usage, patch.object(publisher,'read_models') as models, patch.object(publisher,'publish_snapshot') as write:
+                with self.assertRaises(SystemExit):publisher.main()
+                usage.assert_not_called();models.assert_not_called();write.assert_not_called()
+
+    def test_invalid_port_stops_before_inspecting_listener_or_sources(self):
+        for port in ['80','65536']:
+            with patch.object(sys,'argv',['publisher','--viewer-port',port]), patch.object(publisher.subprocess,'run') as listener:
+                with self.assertRaises(SystemExit):publisher.main()
+                listener.assert_not_called()
 
 if __name__=='__main__':unittest.main(verbosity=2)

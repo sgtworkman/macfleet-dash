@@ -1,5 +1,5 @@
-import {locationName} from './fleet-locations.mjs?v=0.9.3';
-export const VIEWER_VERSION = '0.9.3';
+import {locationName} from './fleet-locations.mjs?v=0.9.4';
+export const VIEWER_VERSION = '0.9.4';
 export const STALE_MS = 10 * 60 * 1000;
 export const number = value => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
 export const percent = value => number(value) !== null && value <= 100 ? value : null;
@@ -55,7 +55,8 @@ export function combineFleet(base,windows=null,registry=null,tailnet=null) {
   const seed=base||{app:'macfleet-dash',schema:1,hosts:[],history:{},version:null,observedAt:null};
   const metadata=registry?.schema==='macfleet.registry.v1'&&registry.hosts&&typeof registry.hosts==='object'?registry.hosts:{};
   const siteFor=row=>locationName(metadata[row.host]?.site??row.site??'');
-  const hosts=seed.hosts.map(r=>({...r,kind:metadata[r.host]?.kind||'computer',site:siteFor(r),purpose:metadata[r.host]?.purpose||'other'}));
+  const roleFor=row=>typeof metadata[row.host]?.role==='string'&&metadata[row.host].role.length>0&&metadata[row.host].role.length<=120&&!/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/.test(metadata[row.host].role)?metadata[row.host].role:row.role;
+  const hosts=seed.hosts.map(r=>({...r,role:roleFor(r),kind:metadata[r.host]?.kind||'computer',site:siteFor(r),purpose:metadata[r.host]?.purpose||'other'}));
   for(const row of windows?.hosts||[]) {
     if(hosts.some(r=>r.host===row.host)) throw Error('Duplicate host identity across sources');
     hosts.push({...row,site:siteFor(row),purpose:row.purpose||metadata[row.host]?.purpose||'other',inventoryOs:metadata[row.host]?.inventoryOs,identityVerifiedOn:metadata[row.host]?.identityVerifiedOn});

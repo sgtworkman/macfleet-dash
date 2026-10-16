@@ -6,9 +6,9 @@
 sparkDash-style health dashboard for a fleet of Macs — Apple Silicon + Intel,
 macOS + Linux, zero sudo, zero dependencies.
 
-**Viewer release v0.9.3.** The health collector and probe remain v0.6.0;
+**Viewer release v0.9.4.** The health collector and probe remain v0.6.0;
 their existing protocol and running services are unchanged. See the
-[change log](CHANGELOG.md) and [release notes](https://github.com/sgtworkman/macfleet-dash/releases/tag/v0.9.3).
+[change log](CHANGELOG.md) and [release notes](https://github.com/sgtworkman/macfleet-dash/releases/tag/v0.9.4).
 
 The screenshots below are synthetic examples from the earlier viewer.
 Versions 0.7.0+ use resource bars and hourly history instead of overview CPU lines.
@@ -41,6 +41,7 @@ macfleet-dash/
 ├── viewer/fleet-model.mjs      validated metrics and fixed-scale hourly history
 ├── collector/token_usage.py   aggregate-only read of local Hermes usage
 ├── collector/publish_token_usage.py  private token snapshot; existing WCC cadence
+├── collector/model_status.py  bounded read-only current-model metadata
 ├── collector/windows_snapshot.py  optional encrypted private WinRM bridge
 ├── windows/                   reviewed local Windows collector and validator
 └── tests/test_parse.py        fixture-based unit tests (stdlib unittest)
@@ -97,7 +98,7 @@ tailnet_via = "mini1"   # optional: read the peer map from this ssh host (works 
 [hosts.macstudio]
 method = "http"               # restricted SSH? poll its metrics endpoint
 url = "http://100.64.0.5:8791/metrics.txt"   # endpoint Mac's Tailscale IP
-role = "Gemma canary (MLX)"
+role = "Local AI · vision and text"  # saved description, not model detection
 
 [hosts.legacy-box]
 method = "ssh"
@@ -181,6 +182,58 @@ To undo a shared change, restore the exact previous registry from the backup
 path printed by the command, then refresh. No telemetry, identity, enrollment,
 credentials, network policy or collector configuration is changed.
 
+## Current model · v0.9.4
+
+Computer cards and details show **Current model** separately from the saved
+computer role and the optional historical performance benchmark. A model is
+current only after a fresh, singleton llama.cpp `/v1/models` response. The
+optional `/props` response supplies the artifact filename and active context
+per slot; full private filesystem paths are discarded. Quantization and model
+parameter count come from reported metadata. Missing values stay unknown.
+A catalog from another server, multiple model IDs, an endpoint failure or a
+check older than 10 minutes is explicitly unverified, not a guessed active model.
+
+Opt in using your own existing private endpoint in `macfleet.toml` or JSON:
+
+```toml
+[hosts.my-ai-computer]
+method = "http"
+url = "http://100.64.0.5:8791/metrics.txt"
+role = "Local AI · vision and text"
+ts_ip = "100.64.0.5"
+model_url = "http://100.64.0.5:8000/v1/models"
+bench = false
+```
+
+Use the real port of your already-running llama.cpp server. Only explicit
+loopback, RFC1918, Tailnet or private IPv6 IPs are accepted; DNS discovery,
+credentials, URL queries, redirects and proxies are not used. If `ts_ip` is
+provided, the model endpoint must be on that registered computer. Up to eight
+configured endpoints are checked, with four concurrent readers, two-second
+request timeouts and bounded response sizes. Other model engines/catalogs
+remain unverified rather than being mislabeled as a loaded model.
+
+The existing optional snapshot command now publishes private mode-0600
+`viewer/model-status.json` alongside token usage:
+
+```sh
+python3 collector/publish_token_usage.py --viewer-port 8780 --config ./macfleet.json
+```
+
+Use your own configuration path and the port of your existing loopback viewer.
+An established WCC refresh already invokes this helper on its normal cadence;
+no scheduler or service restart is added. Standalone installations must call
+the helper from their own existing refresh schedule. One successful manual
+check is not automatic-monitoring proof. The viewer only reads same-origin
+snapshots; it does not contact AI servers or send prompts. Current-model checks
+never load/unload models, run generation benchmarks or change serving context.
+
+To correct an outdated saved Mac/Linux role without reloading its collector,
+set that computer's `role` text in your private `viewer/fleet-registry.json`.
+This is descriptive metadata only; it never substitutes for a model response.
+Preserve existing registry fields. Runtime configuration, model snapshots and
+actual computer/model inventory are never included in public releases.
+
 ## Recent activity and application changes
 
 Open **Recent activity** from Workspace, the overview or computer details.
@@ -206,7 +259,7 @@ Private computer activity and inventory are never included in public notes.
 In addition to tests and secret scanning, inspect the actual source archive:
 
 ```sh
-python3 collector/check_release.py /path/to/macfleet-dash-v0.9.3.tar.gz
+python3 collector/check_release.py /path/to/macfleet-dash-v0.9.4.tar.gz
 ```
 
 The check rejects runtime snapshots, private configuration, exported location
@@ -233,7 +286,7 @@ No health-collector or receiver restart is required for this viewer update.
   `BatchMode=yes` with `ConnectTimeout=8` — key-based, non-interactive, no
   password prompts, no agent hacks.
 - **No secrets.** The viewer fetches only local `data.json`, `token-usage.json`,
-  `windows.json` and `fleet-registry.json`.
+  `windows.json`, `tailnet-windows.json`, `model-status.json` and `fleet-registry.json`.
   The collector talks only to registered hosts. An already opted-in benchmark
   sends one fixed short completion; it is not passive traffic measurement.
 
@@ -310,7 +363,7 @@ The original Windows timestamp is retained separately; a clock discrepancy over
 Every fixed drive is shown and checked separately. Network adapter counters and
 rates are never summed; a rate needs two successful readings of that adapter.
 
-Private `windows-fleet.json`, `tailnet-fleet.json`, `viewer/windows.json`,
+Private `windows-fleet.json`, `tailnet-fleet.json`, `viewer/windows.json`, `viewer/model-status.json`,
 `viewer/tailnet-windows.json` and `viewer/fleet-registry.json`
 are gitignored. Supply your own confirmed inventory/access before claiming
 range coverage. Interactive remote-control access does not prove automatic

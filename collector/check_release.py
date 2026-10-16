@@ -12,13 +12,14 @@ import tarfile
 PRIVATE_NAMES = {
     'macfleet.toml', 'macfleet.json', 'windows-fleet.json', 'tailnet-fleet.json',
     'fleet-registry.json', 'fleet-locations.json', 'token-usage.json',
-    'tailnet-windows.json', 'activity.json',
+    'tailnet-windows.json', 'activity.json', 'model-status.json',
 }
 REQUIRED = {
     'README.md', 'LICENSE', 'CHANGELOG.md', 'viewer/index.html',
     'viewer/fleet-app.mjs', 'viewer/fleet-model.mjs',
     'viewer/fleet-locations.mjs', 'viewer/fleet-workspace.mjs',
     'viewer/fleet-pages.mjs', 'collector/macfleet.py',
+    'viewer/fleet-model-status.mjs', 'collector/model_status.py',
 }
 
 

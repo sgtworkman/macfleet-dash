@@ -1,5 +1,22 @@
 # macfleet-dash change log
 
+## [0.9.4] - 2026-10-16
+
+Prepared 2026-10-16 · Codex
+
+- Show a separate Current model readout on computer cards and details, with
+  its own check time, exact endpoint ID, artifact filename, quantization and
+  active per-slot context. Saved roles and benchmark models are not live identity.
+- Extend the existing optional snapshot helper with bounded read-only private
+  llama.cpp metadata checks. No prompts, generation, model changes, discovery,
+  credentials, redirects, proxies or new background services are introduced.
+- Keep stale, failed, future-dated, catalog-only and multiple-model results
+  unverified; model metadata never changes health readings or fleet totals.
+- Allow bounded private registry role corrections without a collector reload;
+  replace model-specific example role labels with neutral descriptions.
+- Publish no operator inventory or model snapshots; inspect the actual release
+  archive for the new private runtime file. Health collector/probe stay v0.6.0.
+
 ## [0.9.3] - 2026-10-15
 
 Prepared 2026-10-15 · Codex

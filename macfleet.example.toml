@@ -20,9 +20,12 @@ role = "Hermes executive cockpit"
 [hosts.macstudio]
 method = "http"
 url = "http://100.64.0.5:8791/metrics.txt"
-role = "Gemma canary (MLX) + side qualifications"
-# An http host with a model_url shows the OpenAI-compatible model it serves.
-# model_url = "http://100.64.0.5:18890/v1/models"
+role = "Local AI · vision and text"  # saved role, not a live model name
+# The snapshot publisher checks this explicit private llama.cpp endpoint.
+# model_url = "http://100.64.0.5:8000/v1/models"
+# ts_ip = "100.64.0.5"  # if set, model endpoint IP must match
+# Keep metadata monitoring independent of an optional generation benchmark.
+# bench = false
 # bench = true adds a small generation-rate probe (one ~96-token completion per
 # cycle) and shows end-to-end tok/s on the serving chip. Opt-in per host.
 
