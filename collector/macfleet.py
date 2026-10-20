@@ -31,7 +31,7 @@ from datetime import datetime, timedelta, timezone
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Dict, List, Optional, Tuple
 
-VERSION = "0.6.0"
+VERSION = "0.6.2"
 APP_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PROBE_PATH = os.path.join(APP_ROOT, "probe", "fleet-probe.sh")
 DEFAULT_STATE_PATH = os.path.join(APP_ROOT, "state", "macfleet-state.json")
@@ -114,7 +114,8 @@ def _normalize_config(data: Dict[str, Any]) -> Dict[str, Any]:
         entry.setdefault("name", name)
         normalized[name] = entry
     fleet = data.get("fleet") if isinstance(data.get("fleet"), dict) else {}
-    return {"interval": data.get("interval"), "fleet": fleet, "hosts": normalized}
+    return {"interval": data.get("interval"), "fleet": fleet, "hosts": normalized,
+            "sparkdash": data.get("sparkdash") if isinstance(data.get("sparkdash"), dict) else {}}
 
 
 def load_config(path: Optional[str] = None) -> Dict[str, Any]:
@@ -1006,8 +1007,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.serve is not None:
         refresher = None
         if args.live:
-            def refresher(config=config, state=state):
-                fresh = collect(config, state)
+            def refresher(state=state):
+                # One existing owner; use newly saved host configuration on the
+                # next normal cycle. Invalid configuration leaves served data
+                # untouched via serve_viewer's existing refresh error handling.
+                refreshed_config = load_config(args.config)
+                fresh = collect(refreshed_config, state)
                 write_state(_state_path(args), state)
                 return fresh
         return serve_viewer(args.serve, args.bind, payload, refresher, args.interval)

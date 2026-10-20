@@ -1,5 +1,5 @@
-import {locationName} from './fleet-locations.mjs?v=0.9.4';
-export const VIEWER_VERSION = '0.9.4';
+import {locationName} from './fleet-locations.mjs?v=0.10.0';
+export const VIEWER_VERSION = '0.10.0';
 export const STALE_MS = 10 * 60 * 1000;
 export const number = value => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
 export const percent = value => number(value) !== null && value <= 100 ? value : null;
@@ -172,7 +172,7 @@ export function hostAlerts(row, now = Date.now()) {
     for(const drive of row.disks){const capacity=driveStorage(drive);if(capacity&&capacity.free<20)result.push({host:row.host,name:row.name||row.host,priority:2,text:`Low storage ${drive.drive} ${format(capacity.free)} GiB available (${format(capacity.pct,0)}% used). Warning below 20 GiB; other drives do not offset this.`});}
   } else if (disk && disk.free < 20) result.push({host:row.host,name:row.name||row.host,text:`Low storage: ${format(disk.free)} GB available (${format(disk.pct,0)}% used).`});
   if (number(row.swapUsedGb) !== null && row.swapUsedGb > 8) result.push({host:row.host,name:row.name||row.host,text:`High swap: ${format(row.swapUsedGb)} GB in use.`});
-  if (mem && mem.pct >= 95) result.push({host:row.host,name:row.name||row.host,text:`Memory nearly full: ${format(mem.pct,0)}% used.`});
+  if (mem && mem.pct >= 95) result.push({host:row.host,name:row.name||row.host,text:`High reported memory use: ${format(mem.pct,0)}%. This sample is not a memory-pressure measurement; inspect before restarting anything.`});
   return result;
 }
 export function benchmark(row) {

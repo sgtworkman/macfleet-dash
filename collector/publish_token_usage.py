@@ -8,9 +8,12 @@ import os
 from pathlib import Path
 import subprocess
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlsplit
 from token_usage import read_usage
 from model_status import read_models
+from fleet_usage import add_computers
+from sparkdash import read_sparkdash
 
 ROOT=Path(__file__).resolve().parents[1]
 def publish_snapshot(output,payload):
@@ -49,10 +52,23 @@ def main():
         if entry.get('model_url'):
             host=urlsplit(entry['model_url']).hostname
             if host:targets[host]=name
-    payload=read_usage(target_names=targets)
+    previous=None
+    spark_path=ROOT/'viewer/sparkdash.json'
+    if spark_path.is_file() and spark_path.stat().st_size <= 8*1024*1024:
+        try:previous=json.loads(spark_path.read_text(encoding='utf-8'))
+        except (OSError,ValueError):pass
+    # Independent optional sources share the established refresh, not its time
+    # budget serially. No new scheduler, engine poll or background service.
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        token_job=pool.submit(lambda:add_computers(read_usage(target_names=targets),config,targets))
+        model_job=pool.submit(read_models,config)
+        spark_job=pool.submit(read_sparkdash,config,previous)
+        payload=token_job.result()
+        models=model_job.result()
+        spark=spark_job.result()
     publish_snapshot(ROOT/'viewer/token-usage.json',payload)
-    models=read_models(config)
     publish_snapshot(ROOT/'viewer/model-status.json',models)
-    print(json.dumps({'status':payload['status'],'observedAt':payload['observedAt'],'groups':len(payload['groups']),'modelEndpoints':len(models['hosts'])}))
+    publish_snapshot(spark_path,spark)
+    print(json.dumps({'status':payload['status'],'observedAt':payload['observedAt'],'groups':len(payload['groups']),'modelEndpoints':len(models['hosts']),'sparkdash':spark['status']}))
 
 if __name__=='__main__':main()

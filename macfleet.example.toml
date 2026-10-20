@@ -33,3 +33,11 @@ role = "Local AI · vision and text"  # saved role, not a live model name
 method = "ssh"
 host = "mbp2013"
 role = "Amazon lane (Omarchy)"
+
+# Optional: use your existing private SparkDash. Nothing is contacted by default.
+# [sparkdash]
+# enabled = true
+# url = "https://your-dashboard.your-tailnet.ts.net"
+# [sparkdash.units.your-unit-id]
+# name = "My AI machine"
+# host = "your-existing-macfleet-host"  # optional; requires exact ts_ip match

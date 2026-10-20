@@ -6,9 +6,10 @@
 sparkDash-style health dashboard for a fleet of Macs — Apple Silicon + Intel,
 macOS + Linux, zero sudo, zero dependencies.
 
-**Viewer release v0.9.4.** The health collector and probe remain v0.6.0;
-their existing protocol and running services are unchanged. See the
-[change log](CHANGELOG.md) and [release notes](https://github.com/sgtworkman/macfleet-dash/releases/tag/v0.9.4).
+**Viewer release v0.10.0.** Optional read-only SparkDash AI cards, engine token
+windows and resource history; collector v0.6.2 preserves this configuration.
+The probe and health protocol are unchanged. See the
+[change log](CHANGELOG.md) and [release notes](https://github.com/sgtworkman/macfleet-dash/releases/tag/v0.10.0).
 
 The screenshots below are synthetic examples from the earlier viewer.
 Versions 0.7.0+ use resource bars and hourly history instead of overview CPU lines.
@@ -42,6 +43,8 @@ macfleet-dash/
 ├── collector/token_usage.py   aggregate-only read of local Hermes usage
 ├── collector/publish_token_usage.py  private token snapshot; existing WCC cadence
 ├── collector/model_status.py  bounded read-only current-model metadata
+├── collector/sparkdash.py     optional cached SparkDash reports, tokens and history
+├── viewer/fleet-sparkdash.mjs AI views; no direct browser requests to SparkDash
 ├── collector/windows_snapshot.py  optional encrypted private WinRM bridge
 ├── windows/                   reviewed local Windows collector and validator
 └── tests/test_parse.py        fixture-based unit tests (stdlib unittest)
@@ -234,6 +237,114 @@ This is descriptive metadata only; it never substitutes for a model response.
 Preserve existing registry fields. Runtime configuration, model snapshots and
 actual computer/model inventory are never included in public releases.
 
+## Coverage and usage sources · v0.9.5
+
+**Coverage & repairs** groups missing readings and pending identities separately
+from current resource/clock warnings. Counts come from actual computer rows.
+Old aliases are not automatically treated as additional physical machines.
+The page preserves failed-check versus successful-reading timestamps and does
+not wake computers, fix clocks, delete data or restart services.
+
+**Tokens** now selects one source computer and a saved agent/profile. Optional
+remote reads must be explicitly enabled on an existing registered SSH host:
+
+```toml
+[hosts.my-existing-computer]
+method = "ssh"
+host = "my-existing-ssh-alias"
+usage = true
+```
+
+The existing snapshot helper checks at most four opted-in computers concurrently
+with six-second SSH bounds. Host-key checking and BatchMode stay enabled. It
+sends the standard-library, aggregate-only SQLite reader on stdin and leaves
+no remote files or jobs. Missing databases and inaccessible or unsupported
+clients remain unverified. A saved profile identifies a retained database,
+not a proven running agent or the original computer that executed a request.
+Computer histories are never added into a fleet token total because histories
+may have been copied or migrated. Summary totals cover all saved profiles on
+the selected computer; profile/category selectors filter the records list only.
+Codex desktop, provider invoices and non-Hermes traffic are not inferred.
+
+To adopt collector v0.6.1, reload only your existing MacFleet viewer/collector
+using your established service manager, preserving its arguments, bind and
+private state. Do not start a second collector. Future saved configuration
+changes apply on its next existing cycle; invalid configuration leaves the last
+served snapshot untouched. Updating viewer source alone needs a browser refresh;
+it does not imply the already-running collector has loaded the new code.
+
+## Optional SparkDash connection · v0.10.0
+
+MacFleet remains a standalone, dependency-free dashboard. If you already run
+SparkDash, **AI engines** adds reported model/backend, decode/prefill rate,
+running/queued requests and occupied/total slots. **Engine tokens** has 1h,
+6h and 24h windows, by machine/model. **History** has 1h, 6h, 24h, 7d and 30d
+windows for GPU/CPU, minimum memory headroom, network and AI performance.
+Nothing is enabled in SparkDash by this connector; history must already be on
+there. The 0.10.0 release includes the prepared 0.9.5 features above.
+
+Add your own private source to your ignored MacFleet config:
+
+```toml
+[sparkdash]
+enabled = true
+url = "https://your-dashboard.your-tailnet.ts.net"
+
+[sparkdash.units.my-unit-id]
+name = "My AI machine"
+# Optional: link to an EXISTING MacFleet host, never add a new computer.
+# The SparkDash unit's lanIp must exactly match that host's ts_ip.
+host = "my-ai-computer"
+
+[sparkdash.units.my-worker-id]
+name = "My worker"
+# Omit host for an unmapped unit. It does not change MacFleet inventory/counts.
+```
+
+Use the real unit IDs from your existing SparkDash. At most four explicit
+units are read. Allowed origins are private IPs with a port, or an exact HTTPS
+MagicDNS hostname resolving only to private addresses. URLs cannot carry
+credentials, paths, queries or fragments. Redirects and machine proxies are
+disabled; an authentication failure remains unavailable, never bypassed.
+This version does not support SparkDash installations requiring a read API key.
+
+The existing `collector/publish_token_usage.py` command publishes ignored,
+mode-0600 `viewer/sparkdash.json` alongside the existing private snapshots.
+Independent source reads run concurrently, with at most eight SparkDash GETs
+at once, 1.5-second socket timeouts and a 2 MiB response limit. Only cached
+`/api/sparks/<configured-id>/metrics`, history and token-total GET routes are
+used. No discovery, direct engine polling, prompts, model changes, benchmarks,
+alerts, price downloads or new background jobs are added. No service or settings
+on the SparkDash host are changed. A standalone installation must invoke the
+same helper from its own existing refresh schedule; the viewer does not run it.
+
+Receipts and probe times are different: SparkDash's cached metrics API does
+not expose each engine probe's timestamp. The cards label these as reported
+snapshots, not independently verified current probes or computer health.
+Snapshots older than ten minutes, failed reads and retained values are marked
+unverified. A failed refresh preserves the last successful dataset receipt;
+changing source/mapping does not inherit another installation's history.
+
+Engine token windows are SparkDash's hourly UTC buckets, not exact trailing
+minute windows: 1h covers 0–1 elapsed hours, 6h covers 5–6, and 24h covers
+23–24. Only retained tracking is available. Prompt includes cached tokens;
+generated, prompt and cached stay separate. Ports serving the same model on
+one unit are combined; different units remain separate rows. Engine totals
+are never added to Hermes client records or cloud/subscription counters, which
+can describe the same requests and are not provider invoices.
+
+History keeps original epoch-millisecond positions, bucket averages/peaks and
+headroom minima. CPU/GPU charts use fixed 0–100% axes; missing readings break
+lines rather than become zero. A scrolled table preserves exact sample values
+for other metrics. MB and B/s labels follow the source contract. No earlier
+history or token allocation is fabricated.
+
+To roll back, restore prior source while preserving private runtime files and
+configuration, then reload only the existing MacFleet collector if needed.
+Remove or set `[sparkdash] enabled = false` to disable this connector; the next
+snapshot contains no SparkDash units. Never publish your actual configuration,
+unit mapping or snapshot with an application release.
+
 ## Recent activity and application changes
 
 Open **Recent activity** from Workspace, the overview or computer details.
@@ -259,7 +370,7 @@ Private computer activity and inventory are never included in public notes.
 In addition to tests and secret scanning, inspect the actual source archive:
 
 ```sh
-python3 collector/check_release.py /path/to/macfleet-dash-v0.9.4.tar.gz
+python3 collector/check_release.py /path/to/macfleet-dash-v0.10.0.tar.gz
 ```
 
 The check rejects runtime snapshots, private configuration, exported location
@@ -270,7 +381,8 @@ verify the first-computer setup, connection check, location controls and activit
 on desktop and mobile. Keep test telemetry synthetic and outside public source.
 To roll back a viewer update, restore the prior release's source files while
 preserving all private configuration and runtime state, then refresh browsers.
-No health-collector or receiver restart is required for this viewer update.
+The viewer refresh is independent of the collector v0.6.1 adoption described
+above. No AI-service or receiver restart is needed for this release.
 
 ## Security model
 
@@ -286,7 +398,8 @@ No health-collector or receiver restart is required for this viewer update.
   `BatchMode=yes` with `ConnectTimeout=8` — key-based, non-interactive, no
   password prompts, no agent hacks.
 - **No secrets.** The viewer fetches only local `data.json`, `token-usage.json`,
-  `windows.json`, `tailnet-windows.json`, `model-status.json` and `fleet-registry.json`.
+  `windows.json`, `tailnet-windows.json`, `model-status.json`, `sparkdash.json`
+  and `fleet-registry.json`.
   The collector talks only to registered hosts. An already opted-in benchmark
   sends one fixed short completion; it is not passive traffic measurement.
 

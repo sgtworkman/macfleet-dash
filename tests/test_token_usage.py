@@ -107,7 +107,11 @@ class PublisherTests(unittest.TestCase):
             self.assertIn('-iTCP:8780',listener.call_args.args[0])
             for name,value in [('token-usage.json',usage),('model-status.json',models)]:
                 output=root/'viewer'/name
-                self.assertEqual(json.loads(output.read_text()),value)
+                actual=json.loads(output.read_text())
+                self.assertEqual({key:actual[key] for key in value},value)
+                if name=='token-usage.json':
+                    self.assertEqual(actual['computers'][0]['host'],'localhost')
+                    self.assertEqual(actual['computers'][0]['usage'],{**value,'scope':actual['scope']})
                 self.assertEqual(output.stat().st_mode & 0o777,0o600)
 
     def test_unverified_or_non_loopback_viewer_stops_before_reads_and_writes(self):

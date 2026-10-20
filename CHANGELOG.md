@@ -1,5 +1,53 @@
 # macfleet-dash change log
 
+## [0.10.0] - 2026-10-20
+
+Prepared 2026-10-20 · Codex
+
+- Add an optional private, read-only SparkDash connector using cached metrics,
+  token ledgers and history. No extra engine polling, prompts, benchmarks,
+  settings changes, credentials, pricing fetches or notifications are introduced.
+- Add AI engine cards with reported model/backend, decode and prefill speeds,
+  running/queued requests and occupied/total slots. Link an existing MacFleet
+  computer only through an explicit, address-checked mapping; no fleet counts change.
+- Add 1h, 6h and 24h engine token selectors with per-machine/model totals.
+  Disclose partial hourly UTC buckets; keep cached tokens within prompt totals
+  and keep engine traffic separate from Hermes/client and cloud counters.
+- Add 1h, 6h, 24h, 7d and 30d resource/AI history. CPU/GPU average and peak
+  charts have a fixed 0–100% scale and real timestamp positions. Missing
+  readings break lines; memory headroom, network and AI rates stay inspectable.
+- Preserve original receipt times during source failures, show retained values
+  as unverified, and reuse SparkDash's reconnect-aware rates and durable ledger
+  instead of calculating another rate from a reconnecting cumulative counter.
+- Keep SparkDash optional and operator URLs/mappings/snapshots private. Add
+  fresh-install, malformed-data, source-change, reconnect and privacy checks.
+- Collector v0.6.2 preserves the optional connector configuration. The existing
+  snapshot refresh reads independent sources concurrently; no new scheduler.
+- Bound browser snapshot reads to three concurrent requests with one shared
+  deadline, fixing connection resets when the optional sources arrive together.
+- Include the previously prepared 0.9.5 changes below in this release.
+
+## [0.9.5] - 2026-10-20
+
+Prepared 2026-10-20 · Codex · incorporated into 0.10.0; not separately published
+
+- Add Coverage & repairs: distinguish missing telemetry, pending identities and
+  current resource/clock warnings, with original timestamps and safe next actions.
+- Add computer and saved-agent/profile selection for retained Hermes usage.
+  Optional aggregate reads use at most four explicitly opted-in existing SSH
+  routes, with host-key checks, no installs and no remote writes or model calls.
+- Keep computer histories separate rather than sum possibly migrated records.
+  Missing sources, unsupported clients and unclassified endpoints remain unknown.
+- Preserve profile attribution after duplicate/migrated-record selection; no
+  prompts, messages, credentials, session IDs or billing URLs are published.
+- Clarify that reported memory usage is not a memory-pressure measurement.
+- Collector v0.6.1 rereads saved configuration on its existing normal refresh.
+  Invalid configuration preserves served data. One collector reload is needed
+  to adopt this code; no duplicate publisher or AI-service restart is introduced.
+- Public releases contain application source and examples only. Operator
+  enrollments, private routes, machine inventory and remediation results remain
+  local; a source release does not claim every registered computer is connected.
+
 ## [0.9.4] - 2026-10-16
 
 Prepared 2026-10-16 · Codex

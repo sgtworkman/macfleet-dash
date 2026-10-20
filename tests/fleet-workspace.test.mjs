@@ -33,7 +33,7 @@ test('location events reflect saved effective values, not draft edits',()=>{
 test('important alert changes are recorded without numeric-sample spam',()=>{
   const first=observeActivity(emptyActivity(),[host],now);
   const warning=observeActivity(first,[{...host,memUsedGb:15.5}],now+1000);
-  assert.equal(warning.events.length,1);assert.match(warning.events[0].text,/Memory nearly full/);
+  assert.equal(warning.events.length,1);assert.match(warning.events[0].text,/High reported memory use/);assert.match(warning.events[0].text,/not a memory-pressure measurement/);
   const next=observeActivity(warning,[{...host,memUsedGb:15.8}],now+2000);
   assert.equal(next.events.length,1);
   assert.match(observeActivity(next,[host],now+3000).events[1].text,/no longer present/);

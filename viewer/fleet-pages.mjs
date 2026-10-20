@@ -1,7 +1,14 @@
-import {escapeHtml as esc,fleetSummary,freshness,sampleTimes,VIEWER_VERSION} from './fleet-model.mjs?v=0.9.4';
-import {APP_CHANGES} from './fleet-workspace.mjs?v=0.9.4';
+import {escapeHtml as esc,fleetSummary,freshness,sampleTimes,hostAlerts,VIEWER_VERSION} from './fleet-model.mjs?v=0.10.0';
+import {APP_CHANGES} from './fleet-workspace.mjs?v=0.10.0';
 const when=value=>typeof value==='string'&&Number.isFinite(Date.parse(value))?new Date(value).toLocaleString(undefined,{year:'numeric',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZoneName:'short'}):'Time unavailable';
 const hostHref=id=>'#host/'+encodeURIComponent(id);
+
+export function coveragePage(hosts,now=Date.now()){
+  const summary=fleetSummary(hosts,now),rows=hosts.map(row=>({row,state:freshness(row,now),alerts:hostAlerts(row,now)}));
+  const gaps=rows.filter(item=>item.state.state!=='current'),warnings=rows.filter(item=>item.state.state==='current'&&item.alerts.length);
+  const list=(items,empty)=>items.length?`<ul class="repair-list">${items.map(({row,state,alerts})=>`<li><div class="section-head"><a href="${hostHref(row.host)}"><strong>${esc(row.name||row.host)}</strong></a><span class="status ${state.tone}">${esc(state.label)}</span></div><p class="muted">${esc(row.site||'Unassigned')} · ${esc(row.purpose||'other')}</p><p>${readingMeta(row)}</p>${row.enrollment==='not-enrolled'?`<p>${esc(row.pendingReason||'Identity and automatic monitoring must be verified through existing approved access.')}</p>`:alerts.map(alert=>`<p>${esc(alert.text)}</p>`).join('')}<p class="muted">${state.state==='current'?'Next: inspect the reported resource or upstream time source; changing clocks, deleting data and restarting active services need their own checked scope.':state.state==='not-enrolled'?'Next: verify native identity and any old aliases, then test an existing restricted connection. An inventory entry is not an installed collector.':'Next: check the existing monitoring task and private route. A missing reading does not prove power-off; do not wake or reboot the computer solely to change this count.'}</p></li>`).join('')}</ul>`:`<p class="empty">${empty}</p>`;
+  return `<section class="panel"><h2>Fleet coverage</h2><p><strong>${summary.responding} fresh / ${summary.monitored} monitored</strong> · ${summary.pending} pending entries · ${summary.registered} unique registered entries</p><p class="muted">Derived from the actual computer rows—not optimistic source headers. Pending identities may include old aliases; do not assume they are additional physical computers. A current model or Tailscale connection alone does not establish healthy telemetry.</p></section><section class="panel"><h2>Missing readings &amp; pending connections · ${gaps.length}</h2>${list(gaps,'No coverage gaps in the current registered rows.')}</section><section class="panel"><h2>Fresh readings needing attention · ${warnings.length}</h2>${list(warnings,'No current resource or clock warnings in these readings.')}</section>`;
+}
 
 export function readingMeta(row){
   if(row.enrollment==='not-enrolled')return 'No automatic readings yet';

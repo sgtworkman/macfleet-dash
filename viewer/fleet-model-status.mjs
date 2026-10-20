@@ -1,4 +1,4 @@
-import {ageMs,escapeHtml as esc,format,lastUpdateAge} from './fleet-model.mjs?v=0.9.4';
+import {ageMs,escapeHtml as esc,format,lastUpdateAge} from './fleet-model.mjs?v=0.10.0';
 
 const object=value=>!!value&&typeof value==='object'&&!Array.isArray(value);
 const text=(value,max=200)=>typeof value==='string'&&value.trim().length>0&&value.length<=max&&!/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/.test(value);

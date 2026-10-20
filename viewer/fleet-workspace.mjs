@@ -1,6 +1,6 @@
 // Personal workspace state. Never publish this browser's activity with source.
-import {freshness,hostAlerts} from './fleet-model.mjs?v=0.9.4';
-import {locationName,locationsDocument} from './fleet-locations.mjs?v=0.9.4';
+import {freshness,hostAlerts} from './fleet-model.mjs?v=0.10.0';
+import {locationName,locationsDocument} from './fleet-locations.mjs?v=0.10.0';
 
 export const ACTIVITY_STORAGE_KEY='macfleet-activity-v1';
 export const MAX_ACTIVITY=200;
@@ -20,7 +20,7 @@ export function checkedActivity(value){
 }
 function alertKey(label){
   if(label.startsWith('Low storage '))return 'storage:'+label.split(' ')[2];
-  for(const [prefix,key] of [['Low storage:','storage'],['Windows clock','clock'],['High swap:','swap'],['Memory nearly full:','memory'],['Some Windows readings','partial'],['Windows answered','resources']])if(label.startsWith(prefix))return key;
+  for(const [prefix,key] of [['Low storage:','storage'],['Windows clock','clock'],['High swap:','swap'],['Memory nearly full:','memory'],['High reported memory use:','memory'],['Some Windows readings','partial'],['Windows answered','resources']])if(label.startsWith(prefix))return key;
   return label;
 }
 export function observeActivity(saved,hosts,now=Date.now()){
@@ -53,7 +53,9 @@ export const starterConfig=()=>({interval:300,hosts:{'this-computer':{method:'lo
 
 // Generic application notes only: no operator inventory, IPs or private events.
 export const APP_CHANGES=[
-  {version:'0.9.4',at:'2026-10-16T04:22:00Z',by:'Codex',label:'Source prepared',items:['Current model on computer cards and in details, separate from saved roles and benchmark history.','Read-only private llama.cpp identity, artifact, quantization and per-slot context checks through the existing snapshot refresh.','Unavailable, stale, catalog-only and multiple-model results remain explicitly unverified.']},
+  {version:'0.10.0',at:'2026-10-20T05:28:51Z',by:'Codex',label:'Source prepared',items:['Optional read-only SparkDash AI reports: reported model, speed, queues and slot capacity.','Separate 1h, 6h and 24h engine token windows by machine/model, with partial-hour boundaries disclosed.','Resource and AI history with fixed-scale CPU/GPU charts, source gaps and inspectable headroom/network/rates.','Includes the prepared coverage, saved-profile and configuration-refresh improvements from 0.9.5. No SparkDash settings or AI services changed.']},
+  {version:'0.9.5',at:'2026-10-20T04:28:15Z',by:'Codex',label:'Source prepared',items:['Coverage and repairs: missing readings, pending identities and current resource/clock warnings.','Computer and saved-profile selectors for private aggregate Hermes counters; separate histories and explicit missing coverage.','Collector v0.6.1 reads saved configuration during its existing refresh cycle; requires one collector reload to adopt.','Reported memory use stays distinct from actual memory pressure.']},
+  {version:'0.9.4',at:'2026-10-16T04:34:55Z',by:'Codex',label:'GitHub release published',items:['Current model on computer cards and in details, separate from saved roles and benchmark history.','Read-only private llama.cpp identity, artifact, quantization and per-slot context checks through the existing snapshot refresh.','Unavailable, stale, catalog-only and multiple-model results remain explicitly unverified.']},
   {version:'0.9.3',at:'2026-10-16T03:36:34Z',by:'Codex',label:'GitHub release published',items:['First-computer setup and snapshot connection check.','Direct location editing, bulk drafts and clearer save scope.','Private browser activity and timestamped application change notes.','Separate failed-check times from successful readings.','Public archive privacy checks and fresh-install regression coverage.']},
   {version:'0.9.2',at:'2026-10-15T04:51:17Z',by:'Codex',label:'GitHub release published',items:['Self-service locations with browser-only saves and shared configuration export.']}
 ];

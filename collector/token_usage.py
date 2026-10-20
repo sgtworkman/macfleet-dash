@@ -92,18 +92,18 @@ def read_usage(hermes_dir=None, target_names=None, now=None):
                 if key in records:
                     duplicates += 1
                     rank = lambda r: (numeric(r[-1]) or -1, sum(numeric(v) or 0 for v in r[6:12]))
-                    if rank(row) <= rank(records[key]):
+                    if rank(row) <= rank(records[key][0]):
                         continue
-                records[key] = row
+                records[key] = (row, label(profile))
         except (OSError, sqlite3.Error, ValueError):
             source['status'] = 'usage read unavailable'
     groups = {}
-    for row in records.values():
+    for row, profile in records.values():
         _, model, provider, endpoint, mode, _ = row[:6]
         category, host = classify(endpoint)
-        key = (category, label(provider), label(model), host)
+        key = (category, label(provider), label(model), host, profile)
         if key not in groups:
-            groups[key] = {'category': category, 'provider': label(provider), 'model': label(model), 'targetName': label(targets[host]) if host in targets else None, 'recordCount': 0, 'firstSeen': None, 'lastSeen': None, **{name: 0 for name in OUTPUT}}
+            groups[key] = {'category': category, 'provider': label(provider), 'model': label(model), 'agentProfile': profile, 'targetName': label(targets[host]) if host in targets else None, 'recordCount': 0, 'firstSeen': None, 'lastSeen': None, **{name: 0 for name in OUTPUT}}
         group = groups[key]
         group['recordCount'] += 1
         for output_name, value in zip(OUTPUT, row[6:12]):
