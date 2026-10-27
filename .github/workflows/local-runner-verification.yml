@@ -3,9 +3,9 @@ name: Local runner verification
 on:
   workflow_dispatch:
   push:
-    paths: ['.github/workflows/**']
+    paths: ['.github/workflows/**', '.github/scripts/local-runner-policy/**']
   pull_request:
-    paths: ['.github/workflows/**']
+    paths: ['.github/workflows/**', '.github/scripts/local-runner-policy/**']
 
 permissions:
   contents: read
@@ -42,3 +42,6 @@ jobs:
           assert not bad, 'Hosted or unresolved runner declarations: ' + ', '.join(bad)
           print(json.dumps({'runner': os.environ['EXECUTOR_NAME'], 'environment': os.environ['EXECUTOR_ENVIRONMENT'], 'os': os.environ['EXECUTOR_OS'], 'arch': os.environ['EXECUTOR_ARCH'], 'machine': platform.machine(), 'ref': os.environ['GITHUB_REF'], 'sha': os.environ['GITHUB_SHA'], 'workflow_files_checked': len(files), 'runner_declarations_checked': count}, sort_keys=True))
           PY
+      - name: Require local runners for every workflow job
+        shell: bash
+        run: python3 .github/scripts/local-runner-policy/local_runners.py --check-tree "$GITHUB_SHA"
