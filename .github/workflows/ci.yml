@@ -7,7 +7,8 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    if: ${{ (github.event_name != 'pull_request' && github.event_name != 'pull_request_target' || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'workflow_run' || github.event.workflow_run.head_repository.full_name == github.repository) }}
+    runs-on: ["self-hosted","Linux","ARM64","workman-ci"]
     strategy:
       matrix:
         python: ["3.9", "3.13"]
@@ -27,7 +28,8 @@ jobs:
           python collector/check_release.py "$RUNNER_TEMP/macfleet-source.tar.gz"
 
   secrets:
-    runs-on: ubuntu-latest
+    if: ${{ (github.event_name != 'pull_request' && github.event_name != 'pull_request_target' || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'workflow_run' || github.event.workflow_run.head_repository.full_name == github.repository) }}
+    runs-on: ["self-hosted","Linux","ARM64","workman-ci"]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -37,7 +39,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   viewer:
-    runs-on: ubuntu-latest
+    if: ${{ (github.event_name != 'pull_request' && github.event_name != 'pull_request_target' || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'workflow_run' || github.event.workflow_run.head_repository.full_name == github.repository) }}
+    runs-on: ["self-hosted","Linux","ARM64","workman-ci"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
