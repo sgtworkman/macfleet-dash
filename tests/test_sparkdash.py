@@ -82,6 +82,26 @@ class SparkdashTests(unittest.TestCase):
         for private in ('PRIVATE PASSWORD', 'SECRET', 'modelPath', 'lanIp', 'http://'):
             self.assertNotIn(private, json.dumps(result))
 
+    def test_provenance_projects_only_expected_units_and_marks_absent_domains_unknown(self):
+        cfg=config();cfg['sparkdash']['collector_timestamps']=True
+        source='sparkdash_collector_last_success_timestamp_seconds{unit="engine-a",collector="gpu"} 1792474200\n'
+        source+='sparkdash_collector_last_success_timestamp_seconds{unit="other",collector="llm"} 1792474200\n'
+        result=spark.read_sparkdash(cfg,read=read,read_text=lambda url:source,now=lambda:NOW)
+        provenance=result['units'][0]['provenance']
+        self.assertEqual(set(provenance['collectors']), {'gpu'})
+        self.assertEqual(provenance['status'], 'available')
+        self.assertNotIn('llm',provenance['collectors'])
+        self.assertEqual(result['units'][0]['systemHealth']['findings'],None)
+
+    def test_missing_bearer_environment_fails_closed_and_does_not_leak_value(self):
+        cfg=config();cfg['sparkdash']['token_env']='FLEET_TEST_BEARER'
+        with patch.dict('os.environ', {}, clear=True):
+            result=spark.read_sparkdash(cfg,read=lambda url:self.fail('No read without configured credential'),now=lambda:NOW)
+        self.assertEqual(result['status'],'unavailable')
+        self.assertNotIn('FLEET_TEST_BEARER',json.dumps(result))
+        with self.assertRaisesRegex(ValueError,'HTTPS'):
+            spark.fetch_text('http://100.64.0.2:3000/api/sparks','fixture-value')
+
     def test_failed_reconnect_preserves_original_receipts_without_fabricated_rates(self):
         before = spark.read_sparkdash(config(), read=read, now=lambda: NOW)
         def failed(url):raise OSError('SECRET transport failure')

@@ -133,6 +133,13 @@ def load_fleet(root):
                     row[key] = metadata[key]
             if isinstance(metadata.get('expectedHours'), (dict, str)):
                 row['expectedHours'] = metadata['expectedHours']
+    spark = read_json(viewer/'sparkdash.json', optional=True)
+    if spark and spark.get('schema') == 'macfleet.sparkdash.v1' and isinstance(spark.get('units'), list):
+        for unit in spark['units']:
+            host = unit.get('host') if isinstance(unit, dict) else None
+            if host in rows:
+                rows[host]['sparkHealth'] = {'status':unit.get('status'), 'observedAt':unit.get('observedAt'),
+                                             'system':unit.get('systemHealth'), 'provenance':unit.get('provenance')}
     return list(rows.values())
 
 
@@ -168,6 +175,20 @@ def expected_now(row, now):
         return None
 
 
+SPARK_DOMAINS = {'thermal':'gpu', 'low-power':'gpu', 'memory':'memory', 'xid':'gpu',
+                 'oom':'gpu', 'concurrency':'llm', 'link-speed':'network', 'roce-link':'roce', 'roce-loss':'roce'}
+
+
+def spark_current(row, rule, now):
+    health = row.get('sparkHealth') or {}
+    provenance = health.get('provenance') or {}
+    observed = timestamp(health.get('observedAt'))
+    at = timestamp(provenance.get('collectors', {}).get(SPARK_DOMAINS.get(rule)))
+    return (health.get('status') == 'available' and provenance.get('status') == 'available'
+            and observed is not None and at is not None and 0 <= now-observed <= STALE_SECONDS
+            and 0 <= now-at <= STALE_SECONDS)
+
+
 def conditions(row, now):
     state = freshness(row, now)
     if state in ('not-enrolled', 'pilot'):
@@ -198,11 +219,18 @@ def conditions(row, now):
         if service.get('state') != 'available' or service.get('status') != 'Running':
             name = str(service.get('name', 'Unknown service'))
             add('service-'+name, 'Selected service '+name+' is not confirmed running.', 'high')
+    health = row.get('sparkHealth') or {}
+    for finding in (health.get('system') or {}).get('findings') or []:
+        rule = finding.get('id')
+        if rule in SPARK_DOMAINS and spark_current(row, rule, now) and text(finding.get('title')):
+            add('spark-'+rule, 'SparkDash: '+finding['title'], 'high' if finding.get('severity') == 'critical' else 'medium')
     return result
 
 
-def can_clear(rule, row):
+def can_clear(rule, row, now):
     """A successful host reply does not establish that every metric was read."""
+    if rule.startswith('spark-'):
+        return isinstance((row.get('sparkHealth', {}).get('system') or {}).get('findings'), list) and spark_current(row, rule[6:], now)
     if rule == 'report':
         return True
     if rule == 'disk':
@@ -277,7 +305,7 @@ class Operations:
                 # service fault cleared. Keep the original alert until measured.
                 if row is None or freshness(row, now) != 'current':
                     continue
-                if not can_clear(old['rule'], row):
+                if not can_clear(old['rule'], row, now):
                     continue
                 if old['firing'] is None:
                     db.execute('DELETE FROM alerts WHERE id=?', (key,))
