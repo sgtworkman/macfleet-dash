@@ -48,6 +48,26 @@ class OperationsTests(unittest.TestCase):
         self.assertEqual(disk['evidenceState'], 'unavailable')
         self.assertFalse(any(e['kind'] == 'alert.resolved' for e in result['events']))
 
+    def test_successful_host_with_missing_metric_does_not_clear_resource_fault(self):
+        low = dict(self.row, diskFreeGb=5)
+        self.engine.evaluate([low], self.now)
+        self.engine.evaluate([low], self.now+61)
+        missing = dict(self.row, diskFreeGb=None)
+        self.engine.evaluate([missing], self.now+120)
+        result = self.engine.evaluate([missing], self.now+181)
+        self.assertTrue(any(a['rule'] == 'disk' and a['state'] == 'firing' for a in result['alerts']))
+
+    def test_service_fault_is_held_until_its_own_running_evidence_returns(self):
+        bad = dict(self.row, services=[{'name': 'test.service', 'state': 'available', 'status': 'Stopped'}])
+        self.engine.evaluate([bad], self.now)
+        self.engine.evaluate([bad], self.now+61)
+        self.engine.evaluate([self.row], self.now+120)
+        still = self.engine.evaluate([self.row], self.now+181)
+        self.assertTrue(any(a['rule']=='service-test.service' for a in still['alerts']))
+        good = dict(self.row, services=[{'name':'test.service','state':'available','status':'Running'}])
+        self.engine.evaluate([good], self.now+190)
+        self.assertEqual(self.engine.evaluate([good], self.now+251)['alerts'], [])
+
     def test_rechecking_never_refreshes_sample_time_or_counts_pending_as_reporting(self):
         pending = {'host': 'spare', 'status': 'not-enrolled', 'enrollment': 'not-enrolled'}
         pilot = {'host': 'pilot', 'status': 'available', 'enrollment': 'pilot'}

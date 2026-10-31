@@ -131,6 +131,8 @@ def load_fleet(root):
             for key, limit in [('site', 80), ('role', 120), ('kind', 30), ('purpose', 30)]:
                 if text(metadata.get(key), limit):
                     row[key] = metadata[key]
+            if isinstance(metadata.get('expectedHours'), (dict, str)):
+                row['expectedHours'] = metadata['expectedHours']
     return list(rows.values())
 
 
@@ -199,6 +201,27 @@ def conditions(row, now):
     return result
 
 
+def can_clear(rule, row):
+    """A successful host reply does not establish that every metric was read."""
+    if rule == 'report':
+        return True
+    if rule == 'disk':
+        return number(row.get('diskFreeGb'))
+    if rule.startswith('disk-'):
+        return any(isinstance(d, dict) and 'disk-'+str(d.get('drive')) == rule and number(d.get('freeGb')) for d in row.get('disks', []))
+    if rule == 'swap':
+        return number(row.get('swapUsedGb'))
+    if rule == 'memory':
+        return number(row.get('memUsedGb')) and number(row.get('ramGb')) and row['ramGb'] > 0
+    if rule == 'clock':
+        return row.get('clockState') == 'verified'
+    if rule == 'readings':
+        return row.get('sampleState') == 'complete'
+    if rule.startswith('service-'):
+        return any('service-'+s.get('name', '') == rule and s.get('state') == 'available' and s.get('status') == 'Running' for s in row.get('services', []))
+    return False
+
+
 class Operations:
     def __init__(self, database, hold_seconds=120):
         self.path = Path(database)
@@ -254,6 +277,8 @@ class Operations:
                 # service fault cleared. Keep the original alert until measured.
                 if row is None or freshness(row, now) != 'current':
                     continue
+                if not can_clear(old['rule'], row):
+                    continue
                 if old['firing'] is None:
                     db.execute('DELETE FROM alerts WHERE id=?', (key,))
                     continue
@@ -274,6 +299,27 @@ class Operations:
         enrolled = [r for r in rows if r.get('enrollment') not in ('pilot', 'not-enrolled')]
         current = [r for r in enrolled if freshness(r, now) == 'current']
         return {'schema': SCHEMA, 'observedAt': at, 'status': 'available', 'counts': {'registered': len(rows), 'monitored': len(enrolled), 'responding': len(current), 'pending': len(rows)-len(enrolled)}, 'alerts': alerts, 'events': events, 'scope': 'Server observations since this installation started; sample times are not refreshed by evaluation.'}
+
+
+def producer_health(root, now):
+    producers = []
+    for filename, name, required in [('data.json', 'Mac / Linux collector', True),
+                                      ('windows.json', 'Windows WinRM bridge', (root/'windows-fleet.json').exists()),
+                                      ('tailnet-windows.json', 'Authenticated Windows receiver', (root/'tailnet-fleet.json').exists()),
+                                      ('sparkdash.json', 'SparkDash connector', False),
+                                      ('model-status.json', 'Model metadata publisher', False),
+                                      ('token-usage.json', 'Usage publisher', False)]:
+        try:
+            data = read_json(root/'viewer'/filename, optional=not required)
+            if data is None:
+                continue
+            at = data.get('observedAt')
+            t = timestamp(at)
+            state = 'unverified' if t is None or t > now+90 else 'stale' if now-t > STALE_SECONDS else data.get('status', 'unverified')
+            producers.append({'name': name, 'state': state, 'observedAt': at, 'reason': 'Device freshness is checked separately.'})
+        except (OSError, ValueError, TypeError):
+            producers.append({'name': name, 'state': 'unavailable', 'observedAt': None, 'reason': 'No readable source receipt.'})
+    return producers
 
 
 def atomic_json(path, value):
@@ -312,6 +358,7 @@ class Runtime:
         try:
             rows = load_fleet(self.root)
             result = self.operations.evaluate(rows, now)
+            result["producers"] = producer_health(self.root, now)
             atomic_json(self.root/'viewer/operations.json', result)
             with self.lock:
                 self.latest, self.rows = result, rows

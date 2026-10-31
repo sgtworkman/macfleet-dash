@@ -150,17 +150,21 @@ def load_config(path: Optional[str] = None) -> Dict[str, Any]:
 # Probe runners (same contract as the WCC collector: raw text or raise)
 # --------------------------------------------------------------------------
 
-def _probe_script() -> str:
+def _probe_script(services=None) -> str:
     with open(PROBE_PATH, "r", encoding="utf-8") as fh:
-        return fh.read()
+        script = fh.read()
+    labels = services.split() if isinstance(services, str) else []
+    if len(labels) > 16 or any(not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,119}", label) for label in labels):
+        raise ValueError("Selected service label is invalid")
+    return "FLEET_SERVICES='" + " ".join(labels) + "'\n" + script
 
 
-def probe_host(host: str, method: str = "ssh", url: Optional[str] = None) -> str:
+def probe_host(host: str, method: str = "ssh", url: Optional[str] = None, services=None) -> str:
     """Run the read-only fleet probe on one host. Returns raw output; raises
     when the probe does not answer. method: ssh | local | http."""
     if method == "local":
         completed = subprocess.run(
-            ["/bin/sh", "-c", _probe_script()],
+            ["/bin/sh", "-c", _probe_script(services)],
             capture_output=True, text=True, timeout=PROBE_TIMEOUT_S,
         )
     elif method == "http":
@@ -177,7 +181,7 @@ def probe_host(host: str, method: str = "ssh", url: Optional[str] = None) -> str
         ssh_bin = shutil.which("ssh") or "/usr/bin/ssh"
         completed = subprocess.run(
             [ssh_bin] + SSH_OPTIONS + [host, "/bin/sh", "-s"],
-            input=_probe_script(),
+            input=_probe_script(services),
             capture_output=True, text=True, timeout=PROBE_TIMEOUT_S,
         )
     if completed.returncode != 0:
@@ -341,6 +345,10 @@ def parse_fleet_row(host: str, label: str, raw: str, observed_at: str,
         "gpuUtilPct": gpu_util,
         "netRxMb": net_rx_mb,
         "netTxMb": net_tx_mb,
+        "services": [{"name": key[8:], "state": "unavailable" if value == "unverified" else "available",
+                      "status": "Running" if value in ("running", "active") else "Stopped" if value != "unverified" else None,
+                      "observedAt": observed_at}
+                     for key, value in fields.items() if key.startswith("SERVICE_") and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,119}", key[8:])],
         "power": power,
         "backup": backup,
         "diskTotalGb": round(disk_kb[0] / (1024 ** 2), 1) if len(disk_kb) == 3 else None,
@@ -638,7 +646,7 @@ def collect(config: Dict[str, Any], state: Dict[str, Any]) -> Dict[str, Any]:
         note = entry.get("note")
         method = entry.get("method") or "ssh"
         try:
-            raw = probe_host(entry.get("host") or name, method, entry.get("url"))
+            raw = probe_host(entry.get("host") or name, method, entry.get("url"), entry["service_labels"]) if entry.get("service_labels") else probe_host(entry.get("host") or name, method, entry.get("url"))
             row = parse_fleet_row(name, label, raw, observed_at, role=role, note=note)
             if entry.get("model_url"):
                 serving = _fetch_serving(entry["model_url"])

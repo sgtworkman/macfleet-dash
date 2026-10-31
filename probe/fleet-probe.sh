@@ -37,3 +37,15 @@ else
   echo "NET_B=$(grep -v '^ *lo:' /proc/net/dev 2>/dev/null | awk '{rx+=$2; tx+=$10} END {print rx+0, tx+0}')"
 fi
 echo "DISK_K=$(df -k / 2>/dev/null | awk 'END{print $2, $3, $4}')"
+
+# Only explicitly selected service labels, never arguments, logs or processes.
+for fleet_service in ${FLEET_SERVICES:-}; do
+  if command -v sw_vers >/dev/null 2>&1; then
+    fleet_state=$(launchctl print "gui/$(id -u)/$fleet_service" 2>/dev/null | awk '/state = / {print $3; exit}')
+  elif command -v systemctl >/dev/null 2>&1; then
+    fleet_state=$(systemctl show --property=ActiveState --value "$fleet_service" 2>/dev/null)
+  fi
+  case "$fleet_state" in running|active|inactive|failed|waiting|exited) ;; *) fleet_state=unverified ;; esac
+  echo "SERVICE_$fleet_service=$fleet_state"
+  fleet_state=
+done
