@@ -1,4 +1,11 @@
-# macfleet-dash change log
+# Workman Fleet change log
+
+## [0.11.0] - 2026-10-30
+
+- Rename the product to Workman Fleet and describe the existing Mac, Linux,
+  Windows, server and range-computer coverage together.
+- Preserve deployed configuration filenames, snapshot contracts and sender
+  identifiers so existing automatic monitoring keeps working.
 
 ## [0.10.0] - 2026-10-20
 

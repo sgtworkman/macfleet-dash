@@ -1,15 +1,19 @@
-# macfleet-dash
+# Workman Fleet
 
-[![CI](https://github.com/sgtworkman/macfleet-dash/actions/workflows/ci.yml/badge.svg)](https://github.com/sgtworkman/macfleet-dash/actions/workflows/ci.yml)
+[![CI](https://github.com/sgtworkman/workman-fleet/actions/workflows/ci.yml/badge.svg)](https://github.com/sgtworkman/workman-fleet/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-sparkDash-style health dashboard for a fleet of Macs — Apple Silicon + Intel,
-macOS + Linux, zero sudo, zero dependencies.
+A private health dashboard for your entire managed computer fleet: Macs, Linux,
+Windows, servers and range computers, with optional SparkDash AI telemetry.
+The Mac/Linux collector uses the Python standard library and needs no sudo.
 
-**Viewer release v0.10.0.** Optional read-only SparkDash AI cards, engine token
+**Viewer release v0.11.0.** Optional read-only SparkDash AI cards, engine token
 windows and resource history; collector v0.6.2 preserves this configuration.
 The probe and health protocol are unchanged. See the
-[change log](CHANGELOG.md) and [release notes](https://github.com/sgtworkman/macfleet-dash/releases/tag/v0.10.0).
+[change log](CHANGELOG.md) and [release notes](https://github.com/sgtworkman/workman-fleet/releases/tag/v0.11.0).
+
+Existing `macfleet` configuration filenames, snapshot schemas and installed task
+identifiers remain compatible during the Workman Fleet rename.
 
 The screenshots below are synthetic examples from the earlier viewer.
 Versions 0.7.0+ use resource bars and hourly history instead of overview CPU lines.
@@ -32,7 +36,7 @@ owner approved a sampler) power/thermal:
 ![expanded host detail](docs/detail.png)
 
 ```
-macfleet-dash/
+workman-fleet/
 ├── probe/fleet-probe.sh        POSIX probe — answers on macOS AND Linux
 ├── endpoint/metrics_server.py  read-only /metrics.txt endpoint (for hosts without SSH)
 ├── endpoint/install.sh         macOS LaunchAgent installer for the endpoint
@@ -122,7 +126,7 @@ viewer up:
 
 ```sh
 # crontab -e : 5-minute cycles
-*/5 * * * * cd /path/to/macfleet-dash && python3 collector/macfleet.py --live >/dev/null 2>&1
+*/5 * * * * cd /path/to/workman-fleet && python3 collector/macfleet.py --live >/dev/null 2>&1
 # then leave this running (launchd KeepAlive or a plain shell):
 python3 collector/macfleet.py --serve 8780
 ```
@@ -158,7 +162,7 @@ Unsaved individual and bulk edits survive a normal data refresh.
   They survive a page reload but do not change another browser or the server.
   Storage failures are shown as errors, never as successful saves.
 - **Download shared config** downloads `fleet-locations.json`. On the computer
-  hosting your installation, apply it from the MacFleet folder:
+  hosting your installation, apply it from the Workman Fleet folder:
 
   ```sh
   python3 collector/configure_locations.py --import /path/to/fleet-locations.json
@@ -266,7 +270,7 @@ may have been copied or migrated. Summary totals cover all saved profiles on
 the selected computer; profile/category selectors filter the records list only.
 Codex desktop, provider invoices and non-Hermes traffic are not inferred.
 
-To adopt collector v0.6.1, reload only your existing MacFleet viewer/collector
+To adopt collector v0.6.1, reload only your existing Workman Fleet viewer/collector
 using your established service manager, preserving its arguments, bind and
 private state. Do not start a second collector. Future saved configuration
 changes apply on its next existing cycle; invalid configuration leaves the last
@@ -275,7 +279,7 @@ it does not imply the already-running collector has loaded the new code.
 
 ## Optional SparkDash connection · v0.10.0
 
-MacFleet remains a standalone, dependency-free dashboard. If you already run
+Workman Fleet remains a standalone, dependency-free dashboard. If you already run
 SparkDash, **AI engines** adds reported model/backend, decode/prefill rate,
 running/queued requests and occupied/total slots. **Engine tokens** has 1h,
 6h and 24h windows, by machine/model. **History** has 1h, 6h, 24h, 7d and 30d
@@ -283,7 +287,7 @@ windows for GPU/CPU, minimum memory headroom, network and AI performance.
 Nothing is enabled in SparkDash by this connector; history must already be on
 there. The 0.10.0 release includes the prepared 0.9.5 features above.
 
-Add your own private source to your ignored MacFleet config:
+Add your own private source to your ignored Workman Fleet config:
 
 ```toml
 [sparkdash]
@@ -292,13 +296,13 @@ url = "https://your-dashboard.your-tailnet.ts.net"
 
 [sparkdash.units.my-unit-id]
 name = "My AI machine"
-# Optional: link to an EXISTING MacFleet host, never add a new computer.
+# Optional: link to an EXISTING Workman Fleet host, never add a new computer.
 # The SparkDash unit's lanIp must exactly match that host's ts_ip.
 host = "my-ai-computer"
 
 [sparkdash.units.my-worker-id]
 name = "My worker"
-# Omit host for an unmapped unit. It does not change MacFleet inventory/counts.
+# Omit host for an unmapped unit. It does not change Workman Fleet inventory/counts.
 ```
 
 Use the real unit IDs from your existing SparkDash. At most four explicit
@@ -340,7 +344,7 @@ for other metrics. MB and B/s labels follow the source contract. No earlier
 history or token allocation is fabricated.
 
 To roll back, restore prior source while preserving private runtime files and
-configuration, then reload only the existing MacFleet collector if needed.
+configuration, then reload only the existing Workman Fleet collector if needed.
 Remove or set `[sparkdash] enabled = false` to disable this connector; the next
 snapshot contains no SparkDash units. Never publish your actual configuration,
 unit mapping or snapshot with an application release.
@@ -370,7 +374,7 @@ Private computer activity and inventory are never included in public notes.
 In addition to tests and secret scanning, inspect the actual source archive:
 
 ```sh
-python3 collector/check_release.py /path/to/macfleet-dash-v0.10.0.tar.gz
+python3 collector/check_release.py /path/to/workman-fleet-v0.10.0.tar.gz
 ```
 
 The check rejects runtime snapshots, private configuration, exported location

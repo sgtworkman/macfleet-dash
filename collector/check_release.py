@@ -40,7 +40,7 @@ def check_archive(path):
             parts = PurePosixPath(name).parts
             if not parts or name.startswith('/') or '\\' in name or '..' in parts or any(c in name for c in '\x00\r\n'):
                 raise ValueError('Unsafe archive path')
-            if not re.fullmatch(r'macfleet-dash-v\d+\.\d+\.\d+', parts[0]):
+            if not re.fullmatch(r'(?:workman-fleet|macfleet-dash)-v\d+\.\d+\.\d+', parts[0]):
                 raise ValueError('Archive must have one versioned application folder')
             if root is None:
                 root = parts[0]

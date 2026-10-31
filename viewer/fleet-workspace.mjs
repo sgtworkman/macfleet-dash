@@ -1,6 +1,6 @@
 // Personal workspace state. Never publish this browser's activity with source.
-import {freshness,hostAlerts} from './fleet-model.mjs?v=0.10.0';
-import {locationName,locationsDocument} from './fleet-locations.mjs?v=0.10.0';
+import {freshness,hostAlerts} from './fleet-model.mjs?v=0.11.0';
+import {locationName,locationsDocument} from './fleet-locations.mjs?v=0.11.0';
 
 export const ACTIVITY_STORAGE_KEY='macfleet-activity-v1';
 export const MAX_ACTIVITY=200;
@@ -53,6 +53,7 @@ export const starterConfig=()=>({interval:300,hosts:{'this-computer':{method:'lo
 
 // Generic application notes only: no operator inventory, IPs or private events.
 export const APP_CHANGES=[
+  {version:'0.11.0',at:'2026-10-31T02:42:31.771631Z',by:'Codex',label:'Source prepared',items:['Rename the dashboard to Workman Fleet for Mac, Linux, Windows, server and range-computer monitoring.','Preserve existing collector configuration, native sender identifiers and private snapshots during the rename.']},
   {version:'0.10.0',at:'2026-10-20T05:28:51Z',by:'Codex',label:'Source prepared',items:['Optional read-only SparkDash AI reports: reported model, speed, queues and slot capacity.','Separate 1h, 6h and 24h engine token windows by machine/model, with partial-hour boundaries disclosed.','Resource and AI history with fixed-scale CPU/GPU charts, source gaps and inspectable headroom/network/rates.','Includes the prepared coverage, saved-profile and configuration-refresh improvements from 0.9.5. No SparkDash settings or AI services changed.']},
   {version:'0.9.5',at:'2026-10-20T04:28:15Z',by:'Codex',label:'Source prepared',items:['Coverage and repairs: missing readings, pending identities and current resource/clock warnings.','Computer and saved-profile selectors for private aggregate Hermes counters; separate histories and explicit missing coverage.','Collector v0.6.1 reads saved configuration during its existing refresh cycle; requires one collector reload to adopt.','Reported memory use stays distinct from actual memory pressure.']},
   {version:'0.9.4',at:'2026-10-16T04:34:55Z',by:'Codex',label:'GitHub release published',items:['Current model on computer cards and in details, separate from saved roles and benchmark history.','Read-only private llama.cpp identity, artifact, quantization and per-slot context checks through the existing snapshot refresh.','Unavailable, stale, catalog-only and multiple-model results remain explicitly unverified.']},

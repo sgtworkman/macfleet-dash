@@ -173,7 +173,7 @@ class Receiver:
 
 def handler_for(receiver):
     class Handler(BaseHTTPRequestHandler):
-        server_version = 'MacFleetIngest'
+        server_version = 'Workman FleetIngest'
 
         def setup(self):
             super().setup()
@@ -240,7 +240,7 @@ def main():
         # Plain HTTP exists only inside WireGuard, on this exact verified IP.
         # No proxy or forwarded-identity headers are trusted.
         server = HTTPServer((config['bindAddress'], config['port']), handler_for(receiver))
-        print('MacFleet private ingest started', flush=True)
+        print('Workman Fleet private ingest started', flush=True)
         server.serve_forever()
 
 

@@ -59,7 +59,7 @@ test('stale and failed reports never become a fresh model or a zero queue',()=>{
 test('model labels are escaped and non-SparkDash installations remain independent',()=>{
   const p=fixture();p.units[0].name='<script>bad()</script>';
   const html=sparkdashPage(p);assert.doesNotMatch(html,/<script>/);assert.match(html,/&lt;script&gt;/);
-  assert.match(sparkdashPage(null),/MacFleet still works independently/);
+  assert.match(sparkdashPage(null),/Workman Fleet still works independently/);
   p.units[0].history['1h']={...envelope,enabled:false,range:'1h',points:[],llm:[]};
   assert.match(sparkdashPage(p,{view:'history'}),/history is off/);
 });
