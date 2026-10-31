@@ -86,6 +86,8 @@ def load_fleet(root):
     viewer = root/'viewer'
     base = read_json(viewer/'data.json')
     rows = {row['host']: dict(row) for row in checked_rows(base)}
+    for row in rows.values():
+        row['collectorVersion'] = base.get('version')
     windows = read_json(viewer/'windows.json', optional=not (root/'windows-fleet.json').exists())
     pushed = read_json(viewer/'tailnet-windows.json', optional=not (root/'tailnet-fleet.json').exists())
     win = {row['host']: dict(row) for row in checked_rows(windows, True)} if windows else {}
@@ -133,6 +135,9 @@ def load_fleet(root):
                     row[key] = metadata[key]
             if isinstance(metadata.get('expectedHours'), (dict, str)):
                 row['expectedHours'] = metadata['expectedHours']
+            energy = metadata.get('energy')
+            if isinstance(energy, dict) and number(energy.get('pricePerKwh')) and energy['pricePerKwh'] <= 1000 and re.fullmatch(r'[A-Z]{3}', str(energy.get('currency', ''))):
+                row['energyRate'] = {k: energy[k] for k in ('pricePerKwh', 'currency')}
     spark = read_json(viewer/'sparkdash.json', optional=True)
     if spark and spark.get('schema') == 'macfleet.sparkdash.v1' and isinstance(spark.get('units'), list):
         for unit in spark['units']:
@@ -262,6 +267,12 @@ class Operations:
                     payload TEXT, pending REAL, firing REAL, clearing REAL);
                 CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY, at TEXT NOT NULL,
                     host TEXT NOT NULL, kind TEXT NOT NULL, message TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS samples(host TEXT NOT NULL, at REAL NOT NULL,
+                    cpu REAL, gpu REAL, memory REAL, disk REAL, rx REAL, tx REAL,
+                    PRIMARY KEY(host,at));
+                CREATE TABLE IF NOT EXISTS versions(host TEXT PRIMARY KEY, os TEXT, collector TEXT, uptime REAL);
+                CREATE TABLE IF NOT EXISTS power_samples(host TEXT NOT NULL, at REAL NOT NULL,
+                    watts REAL NOT NULL, basis TEXT NOT NULL, PRIMARY KEY(host,at,basis));
             ''')
         os.chmod(self.path, 0o600)
 
@@ -287,6 +298,27 @@ class Operations:
                 if old and old['site'] != site:
                     event(row['host'], 'location', 'Shared location changed to '+site+'.')
                 db.execute('INSERT OR REPLACE INTO hosts VALUES(?,?,?)', (row['host'], state, site))
+                if state == 'current':
+                    measured = lambda key: row[key] if number(row.get(key)) else None
+                    db.execute('INSERT OR IGNORE INTO samples VALUES(?,?,?,?,?,?,?,?)',
+                               (row['host'], timestamp(row['observedAt']), measured('cpuUsedPct'), measured('gpuUtilPct'),
+                                measured('memUsedGb'), measured('diskFreeGb'), measured('netRxMbps'), measured('netTxMbps')))
+                    old_version = db.execute('SELECT * FROM versions WHERE host=?', (row['host'],)).fetchone()
+                    os_version = row.get('os') if text(row.get('os')) else None
+                    collector = row.get('collectorVersion') if text(row.get('collectorVersion'), 40) else None
+                    uptime = measured('uptimeDays')
+                    if old_version:
+                        if os_version and old_version['os'] and old_version['os'] != os_version:
+                            event(row['host'], 'version.os', 'Reported OS changed from '+old_version['os']+' to '+os_version+'.')
+                        if uptime is not None and old_version['uptime'] is not None and uptime < old_version['uptime']:
+                            event(row['host'], 'restart', 'Reported uptime decreased; a restart or uptime correction was observed.')
+                    db.execute('INSERT OR REPLACE INTO versions VALUES(?,?,?,?)',
+                               (row['host'], os_version or (old_version['os'] if old_version else None),
+                                collector or (old_version['collector'] if old_version else None), uptime))
+                    power = measured_power(row, now)
+                    if power:
+                        db.execute('INSERT OR IGNORE INTO power_samples VALUES(?,?,?,?)',
+                                   (row['host'], power['at'], power['watts'], power['basis']))
             old_alerts = {r['id']: dict(r) for r in db.execute('SELECT * FROM alerts')}
             for key, alert in desired.items():
                 old = old_alerts.get(key)
@@ -317,6 +349,8 @@ class Operations:
                 else:
                     db.execute('UPDATE alerts SET clearing=? WHERE id=?', (since, key))
             db.execute('DELETE FROM events WHERE id NOT IN (SELECT id FROM events ORDER BY id DESC LIMIT 10000)')
+            db.execute('DELETE FROM samples WHERE at<?', (now-30*86400,))
+            db.execute('DELETE FROM power_samples WHERE at<?', (now-30*86400-600,))
             alerts = []
             for stored in db.execute('SELECT * FROM alerts ORDER BY pending,id'):
                 alert = json.loads(stored['payload'])
@@ -327,6 +361,64 @@ class Operations:
         enrolled = [r for r in rows if r.get('enrollment') not in ('pilot', 'not-enrolled')]
         current = [r for r in enrolled if freshness(r, now) == 'current']
         return {'schema': SCHEMA, 'observedAt': at, 'status': 'available', 'counts': {'registered': len(rows), 'monitored': len(enrolled), 'responding': len(current), 'pending': len(rows)-len(enrolled)}, 'alerts': alerts, 'events': events, 'scope': 'Server observations since this installation started; sample times are not refreshed by evaluation.'}
+
+    def history(self, host, days=1, now=None):
+        if not isinstance(host, str) or not ID.fullmatch(host) or days not in (1, 7, 30):
+            raise ValueError('History selection is invalid')
+        now = time.time() if now is None else now
+        with self.connect() as db:
+            rows = db.execute('''SELECT CAST(at/3600 AS INTEGER)*3600 AS hour, COUNT(*) AS count,
+                MIN(at) AS first, MAX(at) AS last, AVG(cpu) AS cpuAvg, MAX(cpu) AS cpuPeak,
+                COUNT(cpu) AS cpuCount, AVG(gpu) AS gpuAvg, COUNT(gpu) AS gpuCount,
+                AVG(memory) AS memoryAvg, COUNT(memory) AS memoryCount, MIN(disk) AS diskFreeMin,
+                AVG(rx) AS rxAvg, AVG(tx) AS txAvg FROM samples WHERE host=? AND at>=? AND at<=?
+                GROUP BY hour ORDER BY hour DESC LIMIT 720''', (host, now-days*86400, now)).fetchall()
+        return {'schema':'workman.fleet.history.v1', 'host':host, 'days':days, 'observedAt':iso(now),
+                'rows':[{**dict(row), 'at':iso(row['hour']), 'first':iso(row['first']), 'last':iso(row['last'])} for row in rows],
+                'basis':'Distinct successful device sample timestamps; hourly averages and peaks. Gaps are not zero. Retained up to 30 days.'}
+
+    def energy(self, rows, days=1, now=None):
+        if days not in (1, 7, 30):
+            raise ValueError('Energy window is invalid')
+        now = time.time() if now is None else now
+        start = now-days*86400
+        results = []
+        with self.connect() as db:
+            for row in rows:
+                samples = db.execute('SELECT at,watts,basis FROM power_samples WHERE host=? AND at>=? AND at<=? ORDER BY at', (row['host'], start-600, now)).fetchall()
+                totals = {}
+                for before, after in zip(samples, samples[1:]):
+                    elapsed = after['at']-before['at']
+                    if before['basis'] != after['basis'] or not 0 < elapsed <= 600:
+                        continue
+                    begin = max(before['at'], start)
+                    if after['at'] <= begin:
+                        continue
+                    # Clip the first trapezoid to the exact requested window.
+                    first_watts = before['watts']+(after['watts']-before['watts'])*(begin-before['at'])/elapsed
+                    seconds = after['at']-begin
+                    total = totals.setdefault(after['basis'], {'kwh':0, 'coveredSeconds':0, 'intervals':0})
+                    total['kwh'] += (first_watts+after['watts'])/2*seconds/3600000
+                    total['coveredSeconds'] += seconds
+                    total['intervals'] += 1
+                for basis, total in totals.items():
+                    rate = row.get('energyRate')
+                    results.append({'host':row['host'], 'name':row.get('name') or row['host'], 'basis':basis,
+                                    **total, 'costEstimate':total['kwh']*rate['pricePerKwh'] if rate else None, 'rate':rate})
+        return {'schema':'workman.fleet.energy.v1', 'observedAt':iso(now), 'days':days, 'rows':results,
+                'basis':'Trapezoidal integration between distinct power readings at most 10 minutes apart. Missing intervals excluded; no idle, overnight or whole-fleet extrapolation.'}
+
+
+def measured_power(row, now):
+    health = row.get('sparkHealth') or {}
+    system = health.get('system') or {}
+    if spark_current(row, 'thermal', now) and number(system.get('systemPowerW')):
+        return {'at':timestamp(health['provenance']['collectors']['gpu']), 'watts':system['systemPowerW'], 'basis':'SparkDash reported system power'}
+    power = row.get('power') or {}
+    at = timestamp(power.get('observedAt'))
+    if at is not None and 0 <= now-at <= STALE_SECONDS and number(power.get('cpuW')) and number(power.get('gpuW')):
+        return {'at':at, 'watts':power['cpuW']+power['gpuW'], 'basis':'CPU + GPU components only; excludes other system and wall power'}
+    return None
 
 
 def producer_health(root, now):

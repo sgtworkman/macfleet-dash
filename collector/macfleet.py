@@ -971,7 +971,7 @@ def serve_viewer(port: int, bind: str, payload: Dict[str, Any],
                     continue
         threading.Thread(target=refresh_loop, daemon=True).start()
     import importlib.util
-    from urllib.parse import urlsplit
+    from urllib.parse import urlsplit, parse_qs
     specification = importlib.util.spec_from_file_location('fleet_operations', os.path.join(APP_ROOT, 'collector', 'operations.py'))
     operations = importlib.util.module_from_spec(specification)
     specification.loader.exec_module(operations)
@@ -992,6 +992,23 @@ def serve_viewer(port: int, bind: str, payload: Dict[str, Any],
 
         def do_GET(self):
             route = urlsplit(self.path).path
+            if route == '/api/energy':
+                try:
+                    query = parse_qs(urlsplit(self.path).query)
+                    fleet = runtime.fleet()
+                    value = runtime.operations.energy(fleet['hosts'] if fleet else [], int(query.get('days', ['1'])[0]))
+                    self.respond(200, value)
+                except (ValueError, TypeError):
+                    self.respond(400, {'status':'invalid_selection'})
+                return
+            if route == '/api/history':
+                try:
+                    query = parse_qs(urlsplit(self.path).query)
+                    value = runtime.operations.history(query.get('host', [''])[0], int(query.get('days', ['1'])[0]))
+                    self.respond(200, value)
+                except (ValueError, TypeError):
+                    self.respond(400, {'status':'invalid_selection'})
+                return
             if route == '/api/health':
                 health = runtime.status()
                 self.respond(200, {'app': 'workman-fleet', 'collectorVersion': VERSION,

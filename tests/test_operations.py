@@ -68,6 +68,22 @@ class OperationsTests(unittest.TestCase):
         self.engine.evaluate([good], self.now+190)
         self.assertEqual(self.engine.evaluate([good], self.now+251)['alerts'], [])
 
+    def test_history_deduplicates_device_timestamps_and_energy_excludes_missing_gaps(self):
+        one = dict(self.row, power={'observedAt':operations.iso(self.now),'cpuW':40,'gpuW':60})
+        self.engine.evaluate([one],self.now)
+        self.engine.evaluate([one],self.now+30)
+        two = dict(one, observedAt=operations.iso(self.now+300),power={'observedAt':operations.iso(self.now+300),'cpuW':40,'gpuW':60})
+        self.engine.evaluate([two],self.now+300)
+        gap = dict(two,observedAt=operations.iso(self.now+1500),power={'observedAt':operations.iso(self.now+1500),'cpuW':40,'gpuW':60})
+        self.engine.evaluate([gap],self.now+1500)
+        history=self.engine.history('computer-a',30,self.now+1500)
+        self.assertEqual(sum(r['count'] for r in history['rows']),3)
+        energy=self.engine.energy([self.row],1,self.now+1500)['rows'][0]
+        self.assertAlmostEqual(energy['kwh'],100*300/3600000)
+        self.assertEqual(energy['coveredSeconds'],300)
+        self.assertIsNone(energy['costEstimate'])
+        self.assertIn('components only',energy['basis'])
+
     def test_rechecking_never_refreshes_sample_time_or_counts_pending_as_reporting(self):
         pending = {'host': 'spare', 'status': 'not-enrolled', 'enrollment': 'not-enrolled'}
         pilot = {'host': 'pilot', 'status': 'available', 'enrollment': 'pilot'}
