@@ -7,10 +7,10 @@ A private health dashboard for your entire managed computer fleet: Macs, Linux,
 Windows, servers and range computers, with optional SparkDash AI telemetry.
 The Mac/Linux collector uses the Python standard library and needs no sudo.
 
-**Viewer release v0.11.0.** Optional read-only SparkDash AI cards, engine token
+**Viewer release v0.11.1.** Optional read-only SparkDash AI cards, engine token
 windows and resource history; collector v0.6.2 preserves this configuration.
 The probe and health protocol are unchanged. See the
-[change log](CHANGELOG.md) and [release notes](https://github.com/sgtworkman/workman-fleet/releases/tag/v0.11.0).
+[change log](CHANGELOG.md) and [release notes](https://github.com/sgtworkman/workman-fleet/releases/tag/v0.11.1).
 
 Existing `macfleet` configuration filenames, snapshot schemas and installed task
 identifiers remain compatible during the Workman Fleet rename.

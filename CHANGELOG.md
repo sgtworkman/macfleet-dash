@@ -1,5 +1,10 @@
 # Workman Fleet change log
 
+## [0.11.1] - 2026-10-30
+
+- Carry forward the current Workman local-runner enforcement when publishing
+  the Workman Fleet rename. No host state or access changes.
+
 ## [0.11.0] - 2026-10-30
 
 - Rename the product to Workman Fleet and describe the existing Mac, Linux,
