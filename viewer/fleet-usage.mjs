@@ -1,4 +1,4 @@
-import {validTokenPayload,escapeHtml as esc,ageMs} from './fleet-model.mjs?v=0.10.0';
+import {validTokenPayload,escapeHtml as esc,ageMs} from './fleet-model.mjs?v=0.11.1';
 const label=value=>typeof value==='string'&&value.trim().length>0&&value.length<=160&&!/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/.test(value);
 const identity=value=>typeof value==='string'&&/^[a-z0-9][a-z0-9.-]{0,62}$/.test(value);
 export function validComputerUsagePayload(value){

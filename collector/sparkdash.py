@@ -101,7 +101,7 @@ def project_metrics(value, unit_id, entry, hosts):
     if host is not None:
         expected = hosts[host].get('ts_ip') or entry.get('expected_address')
         if not expected or value.get('lanIp') != expected:
-            raise ValueError('SparkDash to MacFleet identity mismatch')
+            raise ValueError('SparkDash to Workman Fleet identity mismatch')
     endpoints = value.get('metrics', {}).get('llm')
     if not isinstance(endpoints, list) or len(endpoints) > 16:
         raise ValueError('SparkDash endpoint rows unverified')
@@ -243,7 +243,7 @@ def read_sparkdash(config, previous=None, read=fetch_json, now=stamp, resolve=so
             raise ValueError('Explicit SparkDash units required')
         mapped = [entry['host'] for entry in units.values() if entry.get('host')]
         if len(mapped) != len(set(mapped)):
-            raise ValueError('Duplicate MacFleet mapping')
+            raise ValueError('Duplicate Workman Fleet mapping')
         source_id = hashlib.sha256(json.dumps([base, units], sort_keys=True).encode()).hexdigest()
         result['sourceId'] = source_id
         prior = previous if isinstance(previous, dict) and previous.get('schema') == SCHEMA and previous.get('sourceId') == source_id else {}

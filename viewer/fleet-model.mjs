@@ -1,5 +1,5 @@
-import {locationName} from './fleet-locations.mjs?v=0.10.0';
-export const VIEWER_VERSION = '0.10.0';
+import {locationName} from './fleet-locations.mjs?v=0.11.1';
+export const VIEWER_VERSION = '0.11.1';
 export const STALE_MS = 10 * 60 * 1000;
 export const number = value => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
 export const percent = value => number(value) !== null && value <= 100 ? value : null;

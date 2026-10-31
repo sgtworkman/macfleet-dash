@@ -37,6 +37,16 @@ jobs:
       - uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # The wrapper assumes checkout is under the runner's home. Keep the
+          # scan and retain its redacted report with the supported uploader.
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "false"
+      - name: Retain redacted secret-scan report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitleaks-report
+          path: results.sarif
+          if-no-files-found: error
 
   viewer:
     if: ${{ (github.event_name != 'pull_request' && github.event_name != 'pull_request_target' || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'workflow_run' || github.event.workflow_run.head_repository.full_name == github.repository) }}

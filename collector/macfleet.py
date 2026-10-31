@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""macfleet-dash collector — zero-dependency health polling for a fleet of Macs.
+"""Workman Fleet collector — health polling for a managed computer fleet.
 
 Python 3.9+ standard library only. Read-only: runs the bundled POSIX probe over
 SSH (BatchMode, no sudo), a local shell, or an HTTP metrics endpoint; parses
@@ -708,7 +708,7 @@ def _fmt(value: Any, suffix: str = "") -> str:
 
 
 def print_table(payload: Dict[str, Any]) -> None:
-    print("macfleet-dash %s — %s — %d/%d hosts online" % (
+    print("Workman Fleet %s — %s — %d/%d hosts online" % (
         VERSION, payload.get("observedAt") or "—",
         payload.get("onlineCount") or 0, payload.get("totalCount") or 0))
     for row in payload.get("hosts", []):
@@ -925,7 +925,7 @@ def selftest() -> int:
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="macfleet.py",
-        description="macfleet-dash collector — read-only fleet health (stdlib only)",
+        description="Workman Fleet collector — read-only fleet health (stdlib only)",
     )
     parser.add_argument("--config", help="path to macfleet.toml or macfleet.json")
     parser.add_argument("--state", help="state file path (default: state/macfleet-state.json)")
@@ -966,7 +966,7 @@ def serve_viewer(port: int, bind: str, payload: Dict[str, Any],
         *args, directory=VIEWER_DIR, **kwargs)
     server = ThreadingHTTPServer((bind, port), handler)
     url = "http://%s:%d/" % (bind, port)
-    print("macfleet-dash viewer serving %s%s — press Ctrl-C to stop" % (
+    print("Workman Fleet viewer serving %s%s — press Ctrl-C to stop" % (
         url, " (live re-probe every %ss)" % max(30, interval) if refresher else ""))
     try:
         server.serve_forever()
