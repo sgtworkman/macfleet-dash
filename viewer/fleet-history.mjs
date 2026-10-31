@@ -1,4 +1,4 @@
-import {escapeHtml as esc,format} from './fleet-model.mjs?v=0.11.1';
+import {escapeHtml as esc,format} from './fleet-model.mjs?v=0.12.0';
 let selectedDays=1;
 export async function loadSharedHistory(container,host){
   if(!container)return;

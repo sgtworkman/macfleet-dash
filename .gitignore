@@ -19,3 +19,4 @@ __pycache__/
 .DS_Store
 macfleet.toml
 macfleet.json
+viewer/fleet-layout.json

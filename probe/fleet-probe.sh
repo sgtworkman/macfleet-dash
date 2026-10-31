@@ -49,3 +49,14 @@ for fleet_service in ${FLEET_SERVICES:-}; do
   echo "SERVICE_$fleet_service=$fleet_state"
   fleet_state=
 done
+
+# Mounted local block volumes only; APFS volumes may share capacity.
+echo "VOLUMES_K=$(df -klP 2>/dev/null | awk '$1 ~ /^\/dev\// && $2 ~ /^[0-9]+$/ {mount=$6; for(i=7;i<=NF;i++)mount=mount " " $i; print $1 "|" mount "|" $2 "|" $3 "|" $4}' | tr '\n' ';')"
+if [ -r /proc/diskstats ]; then
+  echo "IO_B=$(awk '$3 ~ /^(sd[a-z]+|vd[a-z]+|nvme[0-9]+n[0-9]+|mmcblk[0-9]+)$/ {r+=$6;w+=$10;n++} END{if(n)printf "%.0f %.0f",r*512,w*512}' /proc/diskstats)"
+else
+  fleet_io=$(ioreg -r -c IOBlockStorageDriver -l 2>/dev/null)
+  fleet_read=$(printf '%s' "$fleet_io" | sed -n 's/.*"Bytes (Read)"=\([0-9][0-9]*\).*/\1/p' | awk '{sum+=$1;n++} END{if(n)printf "%.0f",sum}')
+  fleet_write=$(printf '%s' "$fleet_io" | sed -n 's/.*"Bytes (Write)"=\([0-9][0-9]*\).*/\1/p' | awk '{sum+=$1;n++} END{if(n)printf "%.0f",sum}')
+  echo "IO_B=$fleet_read $fleet_write"
+fi

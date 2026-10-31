@@ -31,7 +31,7 @@ from datetime import datetime, timedelta, timezone
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Dict, List, Optional, Tuple
 
-VERSION = "0.6.2"
+VERSION = "0.7.0"
 APP_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PROBE_PATH = os.path.join(APP_ROOT, "probe", "fleet-probe.sh")
 DEFAULT_STATE_PATH = os.path.join(APP_ROOT, "state", "macfleet-state.json")
@@ -210,6 +210,21 @@ def _first_int(text: Optional[str]) -> Optional[int]:
     return int(match.group(0)) if match else None
 
 
+def parse_volumes(raw):
+    rows = []
+    for item in raw.split(';')[:128]:
+        parts = item.split('|')
+        if len(parts) != 5:
+            continue
+        device, mount, total, used, free = parts
+        if not device.startswith('/dev/') or len(device)>120 or not mount.startswith('/') or len(mount)>240 or any(ord(c)<32 for c in device+mount):
+            continue
+        if not all(v.isdigit() for v in (total, used, free)) or not 0 < int(total) <= 10**15 or int(free)>int(total):
+            continue
+        rows.append({'device':device, 'mount':mount, 'totalGb':int(total)/(1024**2), 'freeGb':int(free)/(1024**2), 'filesystemUsedGb':int(used)/(1024**2)})
+    return rows
+
+
 def parse_fleet_row(host: str, label: str, raw: str, observed_at: str,
                     role: Optional[str] = None, note: Optional[str] = None) -> Dict[str, Any]:
     """Parse one probe payload into a viewer row. Raises RuntimeError when the
@@ -345,6 +360,9 @@ def parse_fleet_row(host: str, label: str, raw: str, observed_at: str,
         "gpuUtilPct": gpu_util,
         "netRxMb": net_rx_mb,
         "netTxMb": net_tx_mb,
+        "volumes": parse_volumes(fields.get('VOLUMES_K', '')),
+        "diskReadBytes": _first_int(fields.get('IO_B', '').split()[0]) if len(fields.get('IO_B', '').split())==2 else None,
+        "diskWriteBytes": _first_int(fields.get('IO_B', '').split()[1]) if len(fields.get('IO_B', '').split())==2 else None,
         "services": [{"name": key[8:], "state": "unavailable" if value == "unverified" else "available",
                       "status": "Running" if value in ("running", "active") else "Stopped" if value != "unverified" else None,
                       "observedAt": observed_at}
@@ -670,6 +688,18 @@ def collect(config: Dict[str, Any], state: Dict[str, Any]) -> Dict[str, Any]:
             list(pool.map(probe_one, entries))
     rows.sort(key=lambda r: r["host"])
 
+    previous_by_host = {r.get('host'): r for r in (state.get('previous') or {}).get('hosts', [])}
+    for row in rows:
+        old = previous_by_host.get(row['host'], {})
+        for field, target in [('diskReadBytes','diskReadMBps'),('diskWriteBytes','diskWriteMBps')]:
+            row[target] = None
+            try:
+                elapsed = (datetime.fromisoformat(row['observedAt'].replace('Z','+00:00'))-datetime.fromisoformat(old['observedAt'].replace('Z','+00:00'))).total_seconds()
+                if row['status']=='available' and old.get('status')=='available' and elapsed>0 and type(row.get(field)) is int and type(old.get(field)) is int and row[field]>=old[field]:
+                    row[target] = (row[field]-old[field])/elapsed/1e6
+            except (KeyError,ValueError,TypeError):
+                pass
+
     compute_rates(rows, state.get("previous"))
     available = sum(1 for row in rows if row.get("status") == "available")
 
@@ -992,6 +1022,12 @@ def serve_viewer(port: int, bind: str, payload: Dict[str, Any],
 
         def do_GET(self):
             route = urlsplit(self.path).path
+            if route == '/api/preferences':
+                try:
+                    self.respond(200, runtime.preferences())
+                except (ValueError, TypeError, OSError):
+                    self.respond(503, {'status':'unavailable'})
+                return
             if route == '/api/energy':
                 try:
                     query = parse_qs(urlsplit(self.path).query)
@@ -1030,6 +1066,27 @@ def serve_viewer(port: int, bind: str, payload: Dict[str, Any],
                 self.respond(404, {'status': 'not_found'})
                 return
             super().do_GET()
+
+        def do_PUT(self):
+            # Shared preferences are local-only, same-origin browser writes.
+            host = urlsplit('//'+self.headers.get('Host', '')).hostname
+            origin = self.headers.get('Origin')
+            if (bind not in ('127.0.0.1', '::1', 'localhost') or self.client_address[0] not in ('127.0.0.1','::1')
+                    or host not in ('127.0.0.1','::1','localhost') or origin != 'http://'+self.headers.get('Host','')
+                    or self.headers.get('Sec-Fetch-Site', 'same-origin') != 'same-origin'):
+                self.respond(403, {'status':'same_origin_required'})
+                return
+            if urlsplit(self.path).path != '/api/preferences':
+                self.respond(404, {'status':'not_found'})
+                return
+            try:
+                length = int(self.headers.get('Content-Length', '0'))
+                if not 0 < length <= 65536 or self.headers.get('Content-Type') != 'application/json':
+                    raise ValueError('Invalid preferences body')
+                value = json.loads(self.rfile.read(length))
+                self.respond(200, runtime.preferences(value))
+            except (ValueError, TypeError, OSError):
+                self.respond(409, {'status':'not_saved', 'reason':'Layout or inventory changed, or submitted choices were invalid. Reload before saving.'})
 
     server = ThreadingHTTPServer((bind, port), Handler)
     runtime.start()

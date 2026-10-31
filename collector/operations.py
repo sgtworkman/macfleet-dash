@@ -5,6 +5,7 @@ remote commands, or additional device collector is introduced.
 """
 from datetime import datetime, timezone
 import json
+import hashlib
 import math
 import os
 from pathlib import Path
@@ -458,6 +459,37 @@ def atomic_json(path, value):
             temporary.unlink()
 
 
+def preferences(root, hosts, patch=None):
+    path = Path(root)/'viewer/fleet-layout.json'
+    if path.is_symlink():
+        raise ValueError('Layout file identity is unverified')
+    previous = path.read_bytes() if path.exists() else b''
+    revision = hashlib.sha256(previous).hexdigest()
+    value = json.loads(previous) if previous else {'schema':'workman.fleet.layout.v1', 'order':[], 'panels':{'tokens':True, 'models':True, 'spark':True}}
+    known = [r['host'] for r in hosts]
+    if value.get('schema') != 'workman.fleet.layout.v1':
+        raise ValueError('Layout format is unverified')
+    if patch is not None:
+        if not isinstance(patch, dict) or set(patch) != {'revision','order','panels'} or patch['revision'] != revision:
+            raise ValueError('Layout changed; reload before saving')
+        order, panels = patch['order'], patch['panels']
+        if not isinstance(order, list) or len(order) != len(known) or set(order) != set(known) or len(order) != len(set(order)):
+            raise ValueError('Computer order must contain each current identity once')
+        if not isinstance(panels, dict) or set(panels) != {'tokens','models','spark'} or any(type(v) is not bool for v in panels.values()):
+            raise ValueError('Panel choices are unverified')
+        value = {'schema':'workman.fleet.layout.v1', 'order':order, 'panels':panels}
+        backup = Path(root)/'state/layout-backups'
+        backup.mkdir(parents=True, exist_ok=True)
+        atomic_json(backup/'previous.json', json.loads(previous) if previous else {'schema':'workman.fleet.layout.v1', 'order':[], 'panels':{'tokens':True, 'models':True, 'spark':True}})
+        if (path.read_bytes() if path.exists() else b'') != previous:
+            raise ValueError('Layout changed while saving')
+        atomic_json(path, value)
+        revision = hashlib.sha256(path.read_bytes()).hexdigest()
+    order = [h for h in value.get('order', []) if h in known]
+    order += [h for h in known if h not in order]
+    return {**value, 'order':order, 'revision':revision}
+
+
 class Runtime:
     """One thread owned by the existing viewer service; reads existing writers."""
     def __init__(self, root, interval=30):
@@ -465,6 +497,7 @@ class Runtime:
         self.interval = max(5, interval)
         self.stop = threading.Event()
         self.lock = threading.Lock()
+        self.preferences_lock = threading.Lock()
         self.latest = None
         self.rows = []
         self.health = {'lastAttemptAt': None, 'lastSuccessAt': None, 'error': None}
@@ -514,3 +547,10 @@ class Runtime:
             return {'app': 'macfleet-dash', 'productName': 'Workman Fleet', 'schema': 1,
                     'observedAt': self.latest['observedAt'], 'hosts': json.loads(json.dumps(self.rows)),
                     'operations': json.loads(json.dumps(self.latest)), 'runtime': dict(self.health)}
+
+    def preferences(self, patch=None):
+        with self.preferences_lock:
+            fleet = self.fleet()
+            if fleet is None:
+                raise ValueError('Fleet identities are unavailable')
+            return preferences(self.root, fleet['hosts'], patch)

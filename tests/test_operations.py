@@ -84,6 +84,20 @@ class OperationsTests(unittest.TestCase):
         self.assertIsNone(energy['costEstimate'])
         self.assertIn('components only',energy['basis'])
 
+    def test_layout_revision_prevents_stale_or_unrelated_configuration_writes(self):
+        (self.root/'viewer').mkdir()
+        first=operations.preferences(self.root,[self.row])
+        patch={k:first[k] for k in ('revision','order','panels')}
+        patch['panels']={**patch['panels'],'tokens':False}
+        saved=operations.preferences(self.root,[self.row],patch)
+        self.assertFalse(operations.preferences(self.root,[self.row])['panels']['tokens'])
+        with self.assertRaisesRegex(ValueError,'changed'):
+            operations.preferences(self.root,[self.row],patch)
+        wrong={**patch,'revision':saved['revision'],'order':['other']}
+        with self.assertRaises(ValueError):operations.preferences(self.root,[self.row],wrong)
+        self.assertEqual(operations.preferences(self.root,[self.row]),saved)
+        self.assertTrue((self.root/'state/layout-backups/previous.json').exists())
+
     def test_rechecking_never_refreshes_sample_time_or_counts_pending_as_reporting(self):
         pending = {'host': 'spare', 'status': 'not-enrolled', 'enrollment': 'not-enrolled'}
         pilot = {'host': 'pilot', 'status': 'available', 'enrollment': 'pilot'}

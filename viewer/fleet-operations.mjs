@@ -1,4 +1,4 @@
-import {escapeHtml as esc,ageMs} from './fleet-model.mjs?v=0.11.1';
+import {escapeHtml as esc,ageMs} from './fleet-model.mjs?v=0.12.0';
 
 const object=v=>v!==null&&typeof v==='object'&&!Array.isArray(v);
 const text=v=>typeof v==='string'&&v.length<=1200&&!/[\x00-\x1f\x7f]/.test(v);
