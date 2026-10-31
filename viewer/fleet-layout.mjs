@@ -9,7 +9,7 @@ export function layoutPage(hosts,value){
 }
 export function wireLayout(value,saved){
   const form=document.getElementById('layoutForm');if(!form||!value)return;
-  form.addEventListener('click',event=>{const b=event.target.closest('[data-move]');if(!b)return;form.dataset.dirty='true';const row=b.closest('[data-order-host]');if(b.dataset.move==='up'&&row.previousElementSibling)row.before(row.previousElementSibling);if(b.dataset.move==='down'&&row.nextElementSibling)row.after(row.nextElementSibling);b.focus();});
+  form.addEventListener('click',event=>{const b=event.target.closest('[data-move]');if(!b)return;form.dataset.dirty='true';const row=b.closest('[data-order-host]');if(b.dataset.move==='up'&&row.previousElementSibling)row.previousElementSibling.before(row);if(b.dataset.move==='down'&&row.nextElementSibling)row.nextElementSibling.after(row);b.focus();});
   form.addEventListener('change',()=>{form.dataset.dirty='true';});
   form.addEventListener('submit',async event=>{
     event.preventDefault();const button=form.querySelector('[type=submit]'),status=document.getElementById('layoutStatus');button.disabled=true;
