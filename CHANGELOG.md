@@ -1,5 +1,13 @@
 # Workman Fleet change log
 
+## [0.12.0] - 2026-10-30
+
+- Persist sustained incidents, source health and events in the existing service; retain faults through missing data and expose read-only integration APIs.
+- Monitor explicitly selected continuous services and reuse SparkDash findings, GPU/headroom, RDMA and collector timestamps; support existing bearer credentials securely.
+- Keep distinct successful resource samples for 30 days and observe OS/uptime changes. Add measured-interval energy with coverage and optional configured cost.
+- Add shared layout settings with conflict protection, a shell-only PWA, kiosk rotation, mounted local volumes and supported disk I/O rates.
+- Keep legacy configuration paths and native sender identities compatible.
+
 ## [0.11.1] - 2026-10-30
 
 - Carry forward the current Workman local-runner enforcement when publishing

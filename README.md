@@ -7,10 +7,10 @@ A private health dashboard for your entire managed computer fleet: Macs, Linux,
 Windows, servers and range computers, with optional SparkDash AI telemetry.
 The Mac/Linux collector uses the Python standard library and needs no sudo.
 
-**Viewer release v0.11.1.** Optional read-only SparkDash AI cards, engine token
-windows and resource history; collector v0.6.2 preserves this configuration.
+**Viewer release v0.12.0.** Persistent incidents, history, measured energy,
+shared layout and deeper SparkDash health; collector v0.7.0 preserves this configuration.
 The probe and health protocol are unchanged. See the
-[change log](CHANGELOG.md) and [release notes](https://github.com/sgtworkman/workman-fleet/releases/tag/v0.11.1).
+[change log](CHANGELOG.md) and [release notes](https://github.com/sgtworkman/workman-fleet/releases/tag/v0.12.0).
 
 Existing `macfleet` configuration filenames, snapshot schemas and installed task
 identifiers remain compatible during the Workman Fleet rename.
@@ -521,6 +521,51 @@ Offline checks: `node --test tests/*.test.mjs` and
 `python3 -m unittest discover -s tests -p 'test_*.py'`. The v0.7.0 Windows package
 was preparation only; v0.8.0 adds the optional private bridge described above.
 See [connection limits and verification](windows/README.md).
+
+## Persistent fleet operations (v0.12)
+
+The existing `--serve` process owns private SQLite incidents, events and history in
+`state/fleet-operations.sqlite3`. It reads the existing snapshot writers while
+browsers are closed. Conditions must persist for two minutes; current evidence
+for that exact reading is required to clear a fault. An unanswered probe proves a
+monitoring gap, not a powered-off computer. Pending/pilot entries stay separate.
+Explicit private `expectedHours` suppress new availability incidents outside the
+configured window. Unknown schedules are never guessed.
+
+Read-only routes: `/api/health`, `/api/fleet`, `/api/alerts`, `/api/events`,
+`/api/history?host=ID&days=1|7|30`, and `/api/energy?days=1|7|30`.
+History deduplicates device sample timestamps and retains 30 days from installation.
+Missing intervals stay missing. Existing collector history is retained. OS changes
+and uptime decreases are observations, not proof of an update rollout. Maintenance
+continues through the existing Workman updater.
+
+The existing Command Center notification plan can consume firing incidents and own
+destination, cooldown, deduplication and recovery delivery. An incident is not proof
+that a notification was sent. No recipient or provider configuration is bundled.
+
+Private host `service_labels` selects space-separated continuous launchd user-agent
+or systemd service names. Only state is read. Windows keeps its exact allowlist.
+The POSIX probe also reports mounted local block volumes and supported disk counters.
+APFS volumes can share capacity and must not be summed. Rates require consecutive
+successful counters; initial samples and resets stay unavailable.
+
+Optional SparkDash `collector_timestamps = true` reads its supported `/metrics`
+exporter. `token_env = "YOUR_EXISTING_READ_TOKEN_ENV"` references a credential in
+the collector environment, never its value in a snapshot. Bearer reads require
+HTTPS or loopback and refuse redirects. Cached health findings, GPU/headroom and
+RDMA ports reuse SparkDash collection. Missing collector ages stay unverified.
+
+Energy integrates distinct readings at most ten minutes apart and shows measured
+duration. Component energy stays separate from reported system power and wall
+losses. Optional private registry `hosts.ID.energy` sets `pricePerKwh` and a
+three-letter `currency`. Missing rates stay unavailable; costs are configured
+estimates for measured intervals, not utility bills or whole-fleet totals.
+
+Shared ordering and optional panels save in private `viewer/fleet-layout.json`.
+The local-only, same-origin preferences API rejects stale revisions and unknown
+identities and retains a rollback copy. PWA caching contains only the app shell;
+telemetry and private JSON/API responses are excluded. `?kiosk=1` enables a compact
+display; `&rotate=1` rotates fleet groups every 45 seconds.
 
 ## License
 

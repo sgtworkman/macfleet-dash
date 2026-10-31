@@ -31,7 +31,7 @@ from datetime import datetime, timedelta, timezone
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Dict, List, Optional, Tuple
 
-VERSION = "0.6.2"
+VERSION = "0.7.0"
 APP_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PROBE_PATH = os.path.join(APP_ROOT, "probe", "fleet-probe.sh")
 DEFAULT_STATE_PATH = os.path.join(APP_ROOT, "state", "macfleet-state.json")
@@ -150,17 +150,21 @@ def load_config(path: Optional[str] = None) -> Dict[str, Any]:
 # Probe runners (same contract as the WCC collector: raw text or raise)
 # --------------------------------------------------------------------------
 
-def _probe_script() -> str:
+def _probe_script(services=None) -> str:
     with open(PROBE_PATH, "r", encoding="utf-8") as fh:
-        return fh.read()
+        script = fh.read()
+    labels = services.split() if isinstance(services, str) else []
+    if len(labels) > 16 or any(not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,119}", label) for label in labels):
+        raise ValueError("Selected service label is invalid")
+    return "FLEET_SERVICES='" + " ".join(labels) + "'\n" + script
 
 
-def probe_host(host: str, method: str = "ssh", url: Optional[str] = None) -> str:
+def probe_host(host: str, method: str = "ssh", url: Optional[str] = None, services=None) -> str:
     """Run the read-only fleet probe on one host. Returns raw output; raises
     when the probe does not answer. method: ssh | local | http."""
     if method == "local":
         completed = subprocess.run(
-            ["/bin/sh", "-c", _probe_script()],
+            ["/bin/sh", "-c", _probe_script(services)],
             capture_output=True, text=True, timeout=PROBE_TIMEOUT_S,
         )
     elif method == "http":
@@ -177,7 +181,7 @@ def probe_host(host: str, method: str = "ssh", url: Optional[str] = None) -> str
         ssh_bin = shutil.which("ssh") or "/usr/bin/ssh"
         completed = subprocess.run(
             [ssh_bin] + SSH_OPTIONS + [host, "/bin/sh", "-s"],
-            input=_probe_script(),
+            input=_probe_script(services),
             capture_output=True, text=True, timeout=PROBE_TIMEOUT_S,
         )
     if completed.returncode != 0:
@@ -204,6 +208,21 @@ def _parse_probe_fields(raw: str) -> Dict[str, str]:
 def _first_int(text: Optional[str]) -> Optional[int]:
     match = re.search(r"-?\d+", text or "")
     return int(match.group(0)) if match else None
+
+
+def parse_volumes(raw):
+    rows = []
+    for item in raw.split(';')[:128]:
+        parts = item.split('|')
+        if len(parts) != 5:
+            continue
+        device, mount, total, used, free = parts
+        if not device.startswith('/dev/') or len(device)>120 or not mount.startswith('/') or len(mount)>240 or any(ord(c)<32 for c in device+mount):
+            continue
+        if not all(v.isdigit() for v in (total, used, free)) or not 0 < int(total) <= 10**15 or int(free)>int(total):
+            continue
+        rows.append({'device':device, 'mount':mount, 'totalGb':int(total)/(1024**2), 'freeGb':int(free)/(1024**2), 'filesystemUsedGb':int(used)/(1024**2)})
+    return rows
 
 
 def parse_fleet_row(host: str, label: str, raw: str, observed_at: str,
@@ -341,6 +360,13 @@ def parse_fleet_row(host: str, label: str, raw: str, observed_at: str,
         "gpuUtilPct": gpu_util,
         "netRxMb": net_rx_mb,
         "netTxMb": net_tx_mb,
+        "volumes": parse_volumes(fields.get('VOLUMES_K', '')),
+        "diskReadBytes": _first_int(fields.get('IO_B', '').split()[0]) if len(fields.get('IO_B', '').split())==2 else None,
+        "diskWriteBytes": _first_int(fields.get('IO_B', '').split()[1]) if len(fields.get('IO_B', '').split())==2 else None,
+        "services": [{"name": key[8:], "state": "unavailable" if value == "unverified" else "available",
+                      "status": "Running" if value in ("running", "active") else "Stopped" if value != "unverified" else None,
+                      "observedAt": observed_at}
+                     for key, value in fields.items() if key.startswith("SERVICE_") and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,119}", key[8:])],
         "power": power,
         "backup": backup,
         "diskTotalGb": round(disk_kb[0] / (1024 ** 2), 1) if len(disk_kb) == 3 else None,
@@ -638,7 +664,7 @@ def collect(config: Dict[str, Any], state: Dict[str, Any]) -> Dict[str, Any]:
         note = entry.get("note")
         method = entry.get("method") or "ssh"
         try:
-            raw = probe_host(entry.get("host") or name, method, entry.get("url"))
+            raw = probe_host(entry.get("host") or name, method, entry.get("url"), entry["service_labels"]) if entry.get("service_labels") else probe_host(entry.get("host") or name, method, entry.get("url"))
             row = parse_fleet_row(name, label, raw, observed_at, role=role, note=note)
             if entry.get("model_url"):
                 serving = _fetch_serving(entry["model_url"])
@@ -661,6 +687,18 @@ def collect(config: Dict[str, Any], state: Dict[str, Any]) -> Dict[str, Any]:
         with ThreadPoolExecutor(max_workers=min(4, len(entries))) as pool:
             list(pool.map(probe_one, entries))
     rows.sort(key=lambda r: r["host"])
+
+    previous_by_host = {r.get('host'): r for r in (state.get('previous') or {}).get('hosts', [])}
+    for row in rows:
+        old = previous_by_host.get(row['host'], {})
+        for field, target in [('diskReadBytes','diskReadMBps'),('diskWriteBytes','diskWriteMBps')]:
+            row[target] = None
+            try:
+                elapsed = (datetime.fromisoformat(row['observedAt'].replace('Z','+00:00'))-datetime.fromisoformat(old['observedAt'].replace('Z','+00:00'))).total_seconds()
+                if row['status']=='available' and old.get('status')=='available' and elapsed>0 and type(row.get(field)) is int and type(old.get(field)) is int and row[field]>=old[field]:
+                    row[target] = (row[field]-old[field])/elapsed/1e6
+            except (KeyError,ValueError,TypeError):
+                pass
 
     compute_rates(rows, state.get("previous"))
     available = sum(1 for row in rows if row.get("status") == "available")
@@ -962,9 +1000,96 @@ def serve_viewer(port: int, bind: str, payload: Dict[str, Any],
                 except Exception:  # noqa: BLE001 - keep serving the last good data
                     continue
         threading.Thread(target=refresh_loop, daemon=True).start()
-    handler = lambda *args, **kwargs: SimpleHTTPRequestHandler(
-        *args, directory=VIEWER_DIR, **kwargs)
-    server = ThreadingHTTPServer((bind, port), handler)
+    import importlib.util
+    from urllib.parse import urlsplit, parse_qs
+    specification = importlib.util.spec_from_file_location('fleet_operations', os.path.join(APP_ROOT, 'collector', 'operations.py'))
+    operations = importlib.util.module_from_spec(specification)
+    specification.loader.exec_module(operations)
+    runtime = operations.Runtime(APP_ROOT)
+
+    class Handler(SimpleHTTPRequestHandler):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, directory=VIEWER_DIR, **kwargs)
+
+        def respond(self, status, value):
+            body = json.dumps(value, allow_nan=False).encode('utf-8')
+            self.send_response(status)
+            self.send_header('Content-Type', 'application/json; charset=utf-8')
+            self.send_header('Cache-Control', 'no-store')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_GET(self):
+            route = urlsplit(self.path).path
+            if route == '/api/preferences':
+                try:
+                    self.respond(200, runtime.preferences())
+                except (ValueError, TypeError, OSError):
+                    self.respond(503, {'status':'unavailable'})
+                return
+            if route == '/api/energy':
+                try:
+                    query = parse_qs(urlsplit(self.path).query)
+                    fleet = runtime.fleet()
+                    value = runtime.operations.energy(fleet['hosts'] if fleet else [], int(query.get('days', ['1'])[0]))
+                    self.respond(200, value)
+                except (ValueError, TypeError):
+                    self.respond(400, {'status':'invalid_selection'})
+                return
+            if route == '/api/history':
+                try:
+                    query = parse_qs(urlsplit(self.path).query)
+                    value = runtime.operations.history(query.get('host', [''])[0], int(query.get('days', ['1'])[0]))
+                    self.respond(200, value)
+                except (ValueError, TypeError):
+                    self.respond(400, {'status':'invalid_selection'})
+                return
+            if route == '/api/health':
+                health = runtime.status()
+                self.respond(200, {'app': 'workman-fleet', 'collectorVersion': VERSION,
+                                  'status': 'available' if health['lastSuccessAt'] and not health['error'] else 'unverified',
+                                  'operations': health})
+                return
+            if route in ('/api/fleet', '/api/alerts', '/api/events'):
+                snapshot = runtime.snapshot()
+                if snapshot is None:
+                    self.respond(503, {'status': 'unavailable'})
+                elif route == '/api/fleet':
+                    self.respond(200, runtime.fleet())
+                else:
+                    key = 'alerts' if route == '/api/alerts' else 'events'
+                    self.respond(200, {'schema': snapshot['schema'], 'observedAt': snapshot['observedAt'],
+                                       'runtime': runtime.status(), key: snapshot[key]})
+                return
+            if route.startswith('/api/'):
+                self.respond(404, {'status': 'not_found'})
+                return
+            super().do_GET()
+
+        def do_PUT(self):
+            # Shared preferences are local-only, same-origin browser writes.
+            host = urlsplit('//'+self.headers.get('Host', '')).hostname
+            origin = self.headers.get('Origin')
+            if (bind not in ('127.0.0.1', '::1', 'localhost') or self.client_address[0] not in ('127.0.0.1','::1')
+                    or host not in ('127.0.0.1','::1','localhost') or origin != 'http://'+self.headers.get('Host','')
+                    or self.headers.get('Sec-Fetch-Site', 'same-origin') != 'same-origin'):
+                self.respond(403, {'status':'same_origin_required'})
+                return
+            if urlsplit(self.path).path != '/api/preferences':
+                self.respond(404, {'status':'not_found'})
+                return
+            try:
+                length = int(self.headers.get('Content-Length', '0'))
+                if not 0 < length <= 65536 or self.headers.get('Content-Type') != 'application/json':
+                    raise ValueError('Invalid preferences body')
+                value = json.loads(self.rfile.read(length))
+                self.respond(200, runtime.preferences(value))
+            except (ValueError, TypeError, OSError):
+                self.respond(409, {'status':'not_saved', 'reason':'Layout or inventory changed, or submitted choices were invalid. Reload before saving.'})
+
+    server = ThreadingHTTPServer((bind, port), Handler)
+    runtime.start()
     url = "http://%s:%d/" % (bind, port)
     print("Workman Fleet viewer serving %s%s — press Ctrl-C to stop" % (
         url, " (live re-probe every %ss)" % max(30, interval) if refresher else ""))
@@ -972,6 +1097,9 @@ def serve_viewer(port: int, bind: str, payload: Dict[str, Any],
         server.serve_forever()
     except KeyboardInterrupt:
         print("\nstopped")
+    finally:
+        runtime.close()
+        server.server_close()
     return 0
 
 

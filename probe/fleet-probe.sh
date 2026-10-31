@@ -37,3 +37,26 @@ else
   echo "NET_B=$(grep -v '^ *lo:' /proc/net/dev 2>/dev/null | awk '{rx+=$2; tx+=$10} END {print rx+0, tx+0}')"
 fi
 echo "DISK_K=$(df -k / 2>/dev/null | awk 'END{print $2, $3, $4}')"
+
+# Only explicitly selected service labels, never arguments, logs or processes.
+for fleet_service in ${FLEET_SERVICES:-}; do
+  if command -v sw_vers >/dev/null 2>&1; then
+    fleet_state=$(launchctl print "gui/$(id -u)/$fleet_service" 2>/dev/null | awk '/state = / {print $3; exit}')
+  elif command -v systemctl >/dev/null 2>&1; then
+    fleet_state=$(systemctl show --property=ActiveState --value "$fleet_service" 2>/dev/null)
+  fi
+  case "$fleet_state" in running|active|inactive|failed|waiting|exited) ;; *) fleet_state=unverified ;; esac
+  echo "SERVICE_$fleet_service=$fleet_state"
+  fleet_state=
+done
+
+# Mounted local block volumes only; APFS volumes may share capacity.
+echo "VOLUMES_K=$(df -klP 2>/dev/null | awk '$1 ~ /^\/dev\// && $2 ~ /^[0-9]+$/ {mount=$6; for(i=7;i<=NF;i++)mount=mount " " $i; print $1 "|" mount "|" $2 "|" $3 "|" $4}' | tr '\n' ';')"
+if [ -r /proc/diskstats ]; then
+  echo "IO_B=$(awk '$3 ~ /^(sd[a-z]+|vd[a-z]+|nvme[0-9]+n[0-9]+|mmcblk[0-9]+)$/ {r+=$6;w+=$10;n++} END{if(n)printf "%.0f %.0f",r*512,w*512}' /proc/diskstats)"
+else
+  fleet_io=$(ioreg -r -c IOBlockStorageDriver -l 2>/dev/null)
+  fleet_read=$(printf '%s' "$fleet_io" | sed -n 's/.*"Bytes (Read)"=\([0-9][0-9]*\).*/\1/p' | awk '{sum+=$1;n++} END{if(n)printf "%.0f",sum}')
+  fleet_write=$(printf '%s' "$fleet_io" | sed -n 's/.*"Bytes (Write)"=\([0-9][0-9]*\).*/\1/p' | awk '{sum+=$1;n++} END{if(n)printf "%.0f",sum}')
+  echo "IO_B=$fleet_read $fleet_write"
+fi

@@ -9,6 +9,7 @@ import hashlib
 import ipaddress
 import json
 import math
+import os
 import re
 import socket
 from urllib.parse import urlsplit
@@ -80,18 +81,79 @@ class NoRedirect(HTTPRedirectHandler):
         raise ValueError('SparkDash redirects are not followed')
 
 
-def fetch_json(url):
+def fetch_text(url, token=None):
     opener = build_opener(ProxyHandler({}), NoRedirect())
-    request = Request(url, headers={'User-Agent': 'macfleet-sparkdash/0.10.0',
-                                   'Cache-Control': 'no-cache'}, method='GET')
+    headers = {'User-Agent': 'workman-fleet-sparkdash/0.12.0', 'Cache-Control': 'no-cache'}
+    if token:
+        parsed = urlsplit(url)
+        if parsed.scheme != 'https' and parsed.hostname not in ('127.0.0.1', '::1', 'localhost'):
+            raise ValueError('Bearer reads require HTTPS or loopback')
+        headers['Authorization'] = 'Bearer '+token
+    request = Request(url, headers=headers, method='GET')
     with opener.open(request, timeout=1.5) as response:
         raw = response.read(2 * 1024 * 1024 + 1)
     if len(raw) > 2 * 1024 * 1024:
         raise ValueError('SparkDash response exceeds size bound')
-    value = json.loads(raw.decode('utf-8'))
+    return raw.decode('utf-8')
+
+
+def fetch_json(url, token=None):
+    value = json.loads(fetch_text(url, token))
     if not isinstance(value, dict):
         raise ValueError('SparkDash response must be an object')
     return value
+
+
+def project_health(value):
+    metrics = value.get('metrics') or {}
+    gpu = metrics.get('gpu') or {}
+    ram = metrics.get('unifiedMemory') or {}
+    raw = value.get('health')
+    findings = None
+    if isinstance(raw, list) and len(raw) <= 64:
+        findings = []
+        for item in raw:
+            if (not isinstance(item, dict) or not isinstance(item.get('id'), str) or not ID.fullmatch(item['id'])
+                    or item.get('severity') not in ('warn', 'critical') or not text(item.get('title'))):
+                raise ValueError('SparkDash finding unverified')
+            findings.append({k: item[k] for k in ('id', 'severity', 'title')})
+    roce = metrics.get('roce') or {}
+    ports = []
+    for port in roce.get('devices', [])[:32]:
+        if not isinstance(port, dict) or not text(port.get('name'), 80):
+            continue
+        ports.append({'name': port['name'], 'active': port.get('active') if type(port.get('active')) is bool else None,
+                      'everActive': port.get('everActive') if type(port.get('everActive')) is bool else None,
+                      'rateGbps': port.get('rateGbps') if numeric(port.get('rateGbps'), 10000) else None,
+                      'lossStreak': port.get('loss', {}).get('streak') if integer(port.get('loss', {}).get('streak')) else None})
+    power = gpu.get('power') or {}
+    return {'findings': findings,
+            'gpuTempC': gpu.get('temperature') if numeric(gpu.get('temperature'), 200) else None,
+            'gpuPowerW': power.get('draw') if numeric(power.get('draw'), 10000) else None,
+            'systemPowerW': power.get('systemDraw') if numeric(power.get('systemDraw'), 10000) else None,
+            'headroomMB': ram.get('available') if numeric(ram.get('available')) else None,
+            'thermalThrottle': gpu.get('throttle', {}).get('thermal') if type(gpu.get('throttle', {}).get('thermal')) is bool else None,
+            'roceSampledAt': roce.get('sampledAt') if integer(roce.get('sampledAt')) else None,
+            'rocePorts': ports}
+
+
+def project_collectors(raw, units):
+    """Read only documented provenance rows; labels and other metrics stay out."""
+    result = {key: {} for key in units}
+    pattern = re.compile(r'^sparkdash_collector_last_success_timestamp_seconds\{([^}]+)\} ([0-9.eE+-]+)$')
+    for line in raw.splitlines():
+        match = pattern.fullmatch(line)
+        if not match:
+            continue
+        labels = dict(re.findall(r'([a-z_]+)="([^"\\]*)"', match[1]))
+        unit, collector = labels.get('unit'), labels.get('collector')
+        if unit not in result or not collector or not ID.fullmatch(collector.lower()):
+            continue
+        value = float(match[2])
+        if not numeric(value, 10**12) or value <= 0 or collector in result[unit]:
+            raise ValueError('SparkDash provenance unverified')
+        result[unit][collector] = datetime.fromtimestamp(value, timezone.utc).isoformat().replace('+00:00', 'Z')
+    return result
 
 
 def project_metrics(value, unit_id, entry, hosts):
@@ -130,7 +192,7 @@ def project_metrics(value, unit_id, entry, hosts):
     return {'id': unit_id, 'host': host, 'name': entry.get('name') or
             (value['name'] if text(value.get('name')) else unit_id),
             'online': value['online'], 'worker': value.get('workerNode') is True,
-            'endpoints': rows}
+            'endpoints': rows, 'systemHealth': project_health(value)}
 
 
 def project_totals(value, source_range, unit_ids):
@@ -218,7 +280,7 @@ def project_history(value, selected_range):
             'from': value['from'], 'to': value['to'], 'points': points, 'llm': llm}
 
 
-def read_sparkdash(config, previous=None, read=fetch_json, now=stamp, resolve=socket.getaddrinfo):
+def read_sparkdash(config, previous=None, read=None, now=stamp, resolve=socket.getaddrinfo, read_text=None):
     at = now()
     result = {'schema': SCHEMA, 'observedAt': at, 'status': 'not-configured',
               'sourceId': None, 'units': [], 'totals': {}, 'reason': None}
@@ -233,6 +295,16 @@ def read_sparkdash(config, previous=None, read=fetch_json, now=stamp, resolve=so
     result.update(status='unavailable', reason='SparkDash configuration or private source unverified')
     try:
         base = checked_base(settings.get('url'), resolve)
+        token = None
+        if settings.get('token_env') is not None:
+            variable = settings['token_env']
+            if not isinstance(variable, str) or not re.fullmatch(r'[A-Z][A-Z0-9_]{0,99}', variable):
+                raise ValueError('Bearer environment reference unverified')
+            token = os.environ.get(variable)
+            if not token or len(token) > 8192 or re.search(r'[\x00-\x20\x7f]', token):
+                raise ValueError('Bearer credential unavailable')
+        read = read or (lambda url: fetch_json(url, token))
+        read_text = read_text or (lambda url: fetch_text(url, token))
         units = settings.get('units')
         hosts = config.get('hosts', {})
         if (not isinstance(units, dict) or not 1 <= len(units) <= 4 or
@@ -285,6 +357,17 @@ def read_sparkdash(config, previous=None, read=fetch_json, now=stamp, resolve=so
                     unit_rows[identity[0]]['history'][identity[1]] = value
                 else:
                     result['totals'][identity] = value
+        if settings.get('collector_timestamps') is True:
+            attempted = now()
+            try:
+                collectors = project_collectors(read_text(base+'/metrics'), units)
+                provenance = {'status': 'available', 'observedAt': now(), 'lastAttemptAt': attempted, 'reason': None}
+            except (OSError, ValueError, TypeError, OverflowError):
+                collectors = {}
+                provenance = {'status': 'unavailable', 'observedAt': None, 'lastAttemptAt': attempted, 'reason': 'Collector provenance is unavailable'}
+            states.append(provenance['status'])
+            for key, unit in unit_rows.items():
+                unit['provenance'] = {**provenance, 'collectors': collectors.get(key, {})}
         result.update(units=list(unit_rows.values()),
                       status='available' if all(state == 'available' for state in states) else
                       'partial' if 'available' in states else 'unavailable', reason=None)
