@@ -34,12 +34,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # The wrapper assumes checkout is under the runner's home. Keep the
-          # scan and retain its redacted report with the supported uploader.
-          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "false"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Scan full history with verified Gitleaks CLI
+        run: python .github/scripts/scan-secrets.py
       - name: Retain redacted secret-scan report
         if: always()
         uses: actions/upload-artifact@v4
