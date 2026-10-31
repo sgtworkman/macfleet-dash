@@ -962,9 +962,52 @@ def serve_viewer(port: int, bind: str, payload: Dict[str, Any],
                 except Exception:  # noqa: BLE001 - keep serving the last good data
                     continue
         threading.Thread(target=refresh_loop, daemon=True).start()
-    handler = lambda *args, **kwargs: SimpleHTTPRequestHandler(
-        *args, directory=VIEWER_DIR, **kwargs)
-    server = ThreadingHTTPServer((bind, port), handler)
+    import importlib.util
+    from urllib.parse import urlsplit
+    specification = importlib.util.spec_from_file_location('fleet_operations', os.path.join(APP_ROOT, 'collector', 'operations.py'))
+    operations = importlib.util.module_from_spec(specification)
+    specification.loader.exec_module(operations)
+    runtime = operations.Runtime(APP_ROOT)
+
+    class Handler(SimpleHTTPRequestHandler):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, directory=VIEWER_DIR, **kwargs)
+
+        def respond(self, status, value):
+            body = json.dumps(value, allow_nan=False).encode('utf-8')
+            self.send_response(status)
+            self.send_header('Content-Type', 'application/json; charset=utf-8')
+            self.send_header('Cache-Control', 'no-store')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_GET(self):
+            route = urlsplit(self.path).path
+            if route == '/api/health':
+                health = runtime.status()
+                self.respond(200, {'app': 'workman-fleet', 'collectorVersion': VERSION,
+                                  'status': 'available' if health['lastSuccessAt'] and not health['error'] else 'unverified',
+                                  'operations': health})
+                return
+            if route in ('/api/fleet', '/api/alerts', '/api/events'):
+                snapshot = runtime.snapshot()
+                if snapshot is None:
+                    self.respond(503, {'status': 'unavailable'})
+                elif route == '/api/fleet':
+                    self.respond(200, runtime.fleet())
+                else:
+                    key = 'alerts' if route == '/api/alerts' else 'events'
+                    self.respond(200, {'schema': snapshot['schema'], 'observedAt': snapshot['observedAt'],
+                                       'runtime': runtime.status(), key: snapshot[key]})
+                return
+            if route.startswith('/api/'):
+                self.respond(404, {'status': 'not_found'})
+                return
+            super().do_GET()
+
+    server = ThreadingHTTPServer((bind, port), Handler)
+    runtime.start()
     url = "http://%s:%d/" % (bind, port)
     print("Workman Fleet viewer serving %s%s — press Ctrl-C to stop" % (
         url, " (live re-probe every %ss)" % max(30, interval) if refresher else ""))
@@ -972,6 +1015,9 @@ def serve_viewer(port: int, bind: str, payload: Dict[str, Any],
         server.serve_forever()
     except KeyboardInterrupt:
         print("\nstopped")
+    finally:
+        runtime.close()
+        server.server_close()
     return 0
 
 

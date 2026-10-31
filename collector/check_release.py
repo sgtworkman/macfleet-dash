@@ -13,6 +13,7 @@ PRIVATE_NAMES = {
     'macfleet.toml', 'macfleet.json', 'windows-fleet.json', 'tailnet-fleet.json',
     'fleet-registry.json', 'fleet-locations.json', 'token-usage.json',
     'tailnet-windows.json', 'activity.json', 'model-status.json', 'sparkdash.json',
+    'operations.json',
 }
 REQUIRED = {
     'README.md', 'LICENSE', 'CHANGELOG.md', 'viewer/index.html',
@@ -22,7 +23,7 @@ REQUIRED = {
     'viewer/fleet-model-status.mjs', 'collector/model_status.py',
     'viewer/fleet-usage.mjs', 'collector/fleet_usage.py',
     'viewer/fleet-sparkdash.mjs', 'collector/sparkdash.py',
-    'viewer/fleet-read.mjs',
+    'viewer/fleet-read.mjs', 'viewer/fleet-operations.mjs', 'collector/operations.py',
 }
 
 

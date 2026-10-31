@@ -9,6 +9,7 @@ viewer/tailnet-windows.json
 tailnet-fleet.json
 viewer/fleet-registry.json
 viewer/activity.json
+viewer/operations.json
 fleet-locations.json
 windows-fleet.json
 .windows-fleet-*
