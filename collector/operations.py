@@ -4,6 +4,7 @@ Consumes existing snapshots only. No probing, credentials, process enumeration,
 remote commands, or additional device collector is introduced.
 """
 from datetime import datetime, timezone
+from contextlib import contextmanager
 import json
 import hashlib
 import math
@@ -236,7 +237,11 @@ def conditions(row, now):
 def can_clear(rule, row, now):
     """A successful host reply does not establish that every metric was read."""
     if rule.startswith('spark-'):
-        return isinstance((row.get('sparkHealth', {}).get('system') or {}).get('findings'), list) and spark_current(row, rule[6:], now)
+        system = row.get('sparkHealth', {}).get('system') or {}
+        metric = {'thermal':'gpuTempC', 'memory':'headroomMB'}.get(rule[6:])
+        if metric and not number(system.get(metric)):
+            return False
+        return isinstance(system.get('findings'), list) and spark_current(row, rule[6:], now)
     if rule == 'report':
         return True
     if rule == 'disk':
@@ -277,10 +282,15 @@ class Operations:
             ''')
         os.chmod(self.path, 0o600)
 
+    @contextmanager
     def connect(self):
         db = sqlite3.connect(str(self.path), timeout=2)
         db.row_factory = sqlite3.Row
-        return db
+        try:
+            with db:
+                yield db
+        finally:
+            db.close()
 
     def evaluate(self, rows, now):
         if len({r['host'] for r in rows}) != len(rows):
